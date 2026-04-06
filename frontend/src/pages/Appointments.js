@@ -1,338 +1,384 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Grid,
+  Typography,
+  Box,
   Card,
   CardContent,
-  Typography,
-  Button,
-  Box,
+  Grid,
   Chip,
+  Button,
   CircularProgress,
-  TextField,
-  Snackbar,
   Alert
 } from '@mui/material';
-import { CalendarToday, Schedule, Person, LocationOn, Email, Phone } from '@mui/icons-material';
-import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { 
+  CalendarMonth, 
+  Person, 
+  AccessTime,
+  LocationOn,
+  VideoCall 
+} from '@mui/icons-material';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
-const BookAppointment = () => {
-  const { doctorId } = useParams();
+const Appointments = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [doctor, setDoctor] = useState(null);
+
+  const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedSlot, setSelectedSlot] = useState('');
-  const [patientName, setPatientName] = useState('');
-  const [patientPhone, setPatientPhone] = useState('');
-  const [symptoms, setSymptoms] = useState('');
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
+  const [recentAppointment, setRecentAppointment] = useState(false);
 
   useEffect(() => {
-    fetchDoctorDetails();
-  }, [doctorId]);
+    loadAppointments();
+  }, []);
 
-  const fetchDoctorDetails = async () => {
+  const loadAppointments = () => {
+    setLoading(true);
+    
     try {
-      setLoading(true);
-      const response = await axios.get(`/api/doctors/${doctorId}`);
-      console.log('Doctor API Response:', response.data); // Debug log
+      // Load appointments from localStorage
+      const savedAppointments = JSON.parse(localStorage.getItem('userAppointments') || '[]');
+      console.log('Loaded appointments from storage:', savedAppointments); // Debug log
       
-      if (response.data.success) {
-        setDoctor(response.data.data);
-      } else {
-        showAlert('Failed to load doctor details', 'error');
-      }
+      // Sort by date (newest first)
+      const sortedAppointments = savedAppointments.sort((a, b) => 
+        new Date(b.createdAt) - new Date(a.createdAt)
+      );
+      
+      setAppointments(sortedAppointments);
+      
+      // Check for recent appointments
+      const hasRecent = sortedAppointments.some(apt => isRecentAppointment(apt));
+      setRecentAppointment(hasRecent);
     } catch (error) {
-      console.error('Error fetching doctor details:', error);
-      showAlert('Error loading doctor details. Please try again.', 'error');
+      console.error('Error loading appointments:', error);
+      // Initialize empty array if there's an error
+      localStorage.setItem('userAppointments', JSON.stringify([]));
+      setAppointments([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const showAlert = (message, severity = 'success') => {
-    setAlert({ open: true, message, severity });
+  // Safe data access functions
+  const getDoctorName = (appointment) => {
+    return appointment?.doctor?.name || 'Doctor Information Not Available';
   };
 
-  const handleBookAppointment = async () => {
-    if (!selectedDate || !selectedSlot || !patientName || !patientPhone) {
-      showAlert('Please fill all required fields', 'warning');
-      return;
-    }
+  const getDoctorSpecialization = (appointment) => {
+    return appointment?.doctor?.specialization || 'Specialization Not Available';
+  };
 
+  const getDoctorHospital = (appointment) => {
+    return appointment?.doctor?.hospital || 'Hospital Not Available';
+  };
+
+  const getDoctorExperience = (appointment) => {
+    return appointment?.doctor?.experience || 'Experience Not Available';
+  };
+
+  const getPatientName = (appointment) => {
+    return appointment?.patient?.name || 'Patient Name Not Available';
+  };
+
+  const getPatientAge = (appointment) => {
+    return appointment?.patient?.age || '';
+  };
+
+  const getPatientGender = (appointment) => {
+    return appointment?.patient?.gender || '';
+  };
+
+  const getStatusColor = (status) => {
+    if (!status) return 'default';
+    
+    switch (status.toLowerCase()) {
+      case 'confirmed': return 'success';
+      case 'pending': return 'warning';
+      case 'cancelled': return 'error';
+      case 'completed': return 'info';
+      default: return 'default';
+    }
+  };
+
+  const getTypeColor = (type) => {
+    if (!type) return 'default';
+    
+    switch (type.toLowerCase()) {
+      case 'video': return 'primary';
+      case 'in-person': return 'secondary';
+      default: return 'default';
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Date not set';
+    
     try {
-      setBookingLoading(true);
-      const appointmentData = {
-        doctorId,
-        doctorName: doctor?.name,
-        date: selectedDate,
-        timeSlot: selectedSlot,
-        patientName,
-        patientPhone,
-        symptoms,
-        status: 'confirmed'
-      };
-
-      const response = await axios.post('/api/appointments', appointmentData);
-      
-      if (response.data.success) {
-        showAlert('Appointment booked successfully!', 'success');
-        setTimeout(() => {
-          navigate('/appointments');
-        }, 2000);
-      }
+      return new Date(dateString).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
     } catch (error) {
-      console.error('Error booking appointment:', error);
-      showAlert('Error booking appointment. Please try again.', 'error');
-    } finally {
-      setBookingLoading(false);
+      return 'Invalid Date';
     }
   };
 
-  // Get available time slots based on selected date
-  const getAvailableSlots = () => {
-    if (!selectedDate || !doctor?.availability) return [];
+  const formatBookingDate = (dateString) => {
+    if (!dateString) return 'N/A';
     
-    const dayOfWeek = new Date(selectedDate).getDay();
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const today = days[dayOfWeek];
-    
-    // Find availability for the selected day
-    const dayAvailability = doctor.availability.find(avail => 
-      avail.day?.toLowerCase() === today.toLowerCase()
-    );
-    
-    return dayAvailability ? dayAvailability.slots : [];
+    try {
+      return new Date(dateString).toLocaleDateString('en-US');
+    } catch (error) {
+      return 'Invalid Date';
+    }
   };
 
-  const availableSlots = getAvailableSlots();
+  const handleBookAppointment = () => {
+    navigate('/doctors');
+  };
 
-  if (loading) {
-    return (
-      <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
-        <CircularProgress />
-        <Typography sx={{ ml: 2 }}>Loading doctor details...</Typography>
-      </Container>
-    );
-  }
+  const handleJoinCall = (appointmentId) => {
+    alert(`Joining video call for appointment ${appointmentId}`);
+    // Here you would integrate with video call API
+  };
 
-  if (!doctor) {
+  const handleCancelAppointment = (appointmentId) => {
+    if (window.confirm('Are you sure you want to cancel this appointment?')) {
+      const updatedAppointments = appointments.filter(apt => apt._id !== appointmentId);
+      setAppointments(updatedAppointments);
+      
+      // Update localStorage
+      localStorage.setItem('userAppointments', JSON.stringify(updatedAppointments));
+      
+      alert('Appointment cancelled successfully');
+    }
+  };
+
+  const isRecentAppointment = (appointment) => {
+    if (!appointment?.createdAt) return false;
+    
+    try {
+      const appointmentTime = new Date(appointment.createdAt);
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      return appointmentTime > fiveMinutesAgo;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Debug function to check localStorage
+  const debugStorage = () => {
+    const stored = localStorage.getItem('userAppointments');
+    console.log('Current localStorage:', stored);
+    console.log('Parsed:', JSON.parse(stored || '[]'));
+  };
+
+  if (!user) {
     return (
-      <Container sx={{ textAlign: 'center', mt: 4 }}>
-        <Typography variant="h5">Doctor not found</Typography>
-        <Button variant="contained" onClick={() => navigate('/doctors')} sx={{ mt: 2 }}>
-          Back to Doctors
+      <Container sx={{ mt: 4, textAlign: 'center' }}>
+        <Typography variant="h5" gutterBottom>
+          Please login to view your appointments
+        </Typography>
+        <Button variant="contained" onClick={() => navigate('/login')}>
+          Login
         </Button>
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-      {/* Doctor Info */}
-      <Card sx={{ mb: 4, p: 3 }}>
-        <Grid container spacing={3} alignItems="center">
-          <Grid item xs={12}>
-            <Typography variant="h4" gutterBottom color="primary">
-              {doctor.name || 'Doctor'}
-            </Typography>
-            <Chip 
-              label={doctor.specialization || 'General Practitioner'} 
-              color="primary" 
-              sx={{ mb: 2 }} 
-            />
-            
-            <Typography variant="body1" paragraph>
-              {doctor.qualification || 'Medical Professional'}
-            </Typography>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      {/* Debug button - remove in production */}
+      <Button onClick={debugStorage} variant="outlined" color="secondary" size="small" sx={{ mb: 2 }}>
+        Debug Storage
+      </Button>
 
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <LocationOn sx={{ mr: 1, color: 'primary.main' }} />
-                  <Typography variant="body2">
-                    <strong>Location:</strong> {doctor.location || 'Not specified'}
-                  </Typography>
-                </Box>
-                
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Schedule sx={{ mr: 1, color: 'primary.main' }} />
-                  <Typography variant="body2">
-                    <strong>Experience:</strong> {doctor.experience || 0} years
-                  </Typography>
-                </Box>
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                {doctor.contact?.email && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Email sx={{ mr: 1, color: 'primary.main' }} />
-                    <Typography variant="body2">
-                      {doctor.contact.email}
-                    </Typography>
-                  </Box>
-                )}
-                
-                {doctor.contact?.phone && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Phone sx={{ mr: 1, color: 'primary.main' }} />
-                    <Typography variant="body2">
-                      {doctor.contact.phone}
-                    </Typography>
-                  </Box>
-                )}
-              </Grid>
-            </Grid>
-
-            {doctor.consultationFee && (
-              <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
-                <Typography variant="h6" color="primary">
-                  Consultation Fee: ₹{doctor.consultationFee}
-                </Typography>
-              </Box>
-            )}
-          </Grid>
-        </Grid>
-      </Card>
-
-      {/* Appointment Form */}
-      <Card sx={{ p: 3 }}>
-        <Typography variant="h5" gutterBottom color="primary">
-          Book Appointment
-        </Typography>
-
-        {/* Date Selection */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Select Date
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <CalendarMonth sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+          <Typography variant="h4">
+            My Appointments
           </Typography>
-          <TextField
-            type="date"
-            value={selectedDate}
-            onChange={(e) => {
-              setSelectedDate(e.target.value);
-              setSelectedSlot(''); // Reset slot when date changes
-            }}
-            fullWidth
-            InputLabelProps={{
-              shrink: true,
-            }}
-            inputProps={{
-              min: new Date().toISOString().split('T')[0] // Today's date
-            }}
-          />
         </Box>
-
-        {/* Time Slots */}
-        {selectedDate && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Available Time Slots for {new Date(selectedDate).toLocaleDateString()}
-            </Typography>
-            {availableSlots.length > 0 ? (
-              <Grid container spacing={1}>
-                {availableSlots.map((time, index) => (
-                  <Grid item key={index}>
-                    <Button
-                      variant={selectedSlot === time ? "contained" : "outlined"}
-                      onClick={() => setSelectedSlot(time)}
-                      color="primary"
-                    >
-                      {time}
-                    </Button>
-                  </Grid>
-                ))}
-              </Grid>
-            ) : (
-              <Typography color="error">
-                No available slots for this date. Please choose another date.
-              </Typography>
-            )}
-          </Box>
-        )}
-
-        {/* Patient Details */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Patient Details
-          </Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Patient Name *"
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                fullWidth
-                required
-                placeholder="Enter patient full name"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Phone Number *"
-                value={patientPhone}
-                onChange={(e) => setPatientPhone(e.target.value)}
-                fullWidth
-                required
-                placeholder="Enter 10-digit phone number"
-                type="tel"
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Symptoms or Reason for Visit"
-                value={symptoms}
-                onChange={(e) => setSymptoms(e.target.value)}
-                multiline
-                rows={3}
-                fullWidth
-                placeholder="Describe your symptoms or reason for appointment..."
-              />
-            </Grid>
-          </Grid>
-        </Box>
-
-        {/* Book Button */}
-        <Button
-          variant="contained"
+        <Button 
+          variant="contained" 
           size="large"
           onClick={handleBookAppointment}
-          disabled={bookingLoading || !selectedDate || !selectedSlot || !patientName || !patientPhone}
-          fullWidth
-          sx={{ mt: 2, py: 1.5 }}
         >
-          {bookingLoading ? (
-            <CircularProgress size={24} color="inherit" />
-          ) : (
-            `Book Appointment - ₹${doctor.consultationFee || 0}`
-          )}
+          Book New Appointment
         </Button>
+      </Box>
 
-        <Typography variant="body2" color="textSecondary" sx={{ mt: 2, textAlign: 'center' }}>
-          * Required fields must be filled
-        </Typography>
-      </Card>
-
-      {/* Alert Snackbar */}
-      <Snackbar
-        open={alert.open}
-        autoHideDuration={4000}
-        onClose={() => setAlert({ ...alert, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={() => setAlert({ ...alert, open: false })} 
-          severity={alert.severity}
-          sx={{ width: '100%' }}
-        >
-          {alert.message}
+      {/* Show success message if appointment was recently booked */}
+      {recentAppointment && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          Your appointment has been booked successfully!
         </Alert>
-      </Snackbar>
+      )}
+
+      {loading ? (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+          <CircularProgress />
+        </Box>
+      ) : appointments.length === 0 ? (
+        <Card>
+          <CardContent sx={{ textAlign: 'center', py: 6 }}>
+            <CalendarMonth sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h5" gutterBottom>
+              No Appointments Found
+            </Typography>
+            <Typography variant="body1" color="textSecondary" sx={{ mb: 4, maxWidth: 400, margin: '0 auto' }}>
+              You haven't booked any doctor appointments yet. Book your first appointment with our specialist doctors.
+            </Typography>
+            <Button 
+              variant="contained" 
+              size="large"
+              onClick={handleBookAppointment}
+            >
+              Book Your First Appointment
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Grid container spacing={3}>
+          {appointments.map((appointment) => (
+            <Grid item xs={12} key={appointment._id || appointment.appointmentId}>
+              <Card elevation={2} sx={{ 
+                borderLeft: 4, 
+                borderColor: getStatusColor(appointment.status) + '.main',
+                backgroundColor: isRecentAppointment(appointment) ? '#f0f7ff' : 'white'
+              }}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                    <Box>
+                      <Typography variant="h6" gutterBottom>
+                        Appointment #{appointment.appointmentId || 'N/A'}
+                        {isRecentAppointment(appointment) && (
+                          <Chip 
+                            label="New" 
+                            color="success" 
+                            size="small" 
+                            sx={{ ml: 1 }}
+                          />
+                        )}
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        Booked on {formatBookingDate(appointment.createdAt)}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Chip 
+                        label={appointment.status || 'unknown'} 
+                        color={getStatusColor(appointment.status)}
+                        size="small"
+                      />
+                      <Chip 
+                        label={appointment.type === 'video' ? 'Video Consult' : 'In-Person'} 
+                        color={getTypeColor(appointment.type)}
+                        size="small"
+                        variant="outlined"
+                        icon={appointment.type === 'video' ? <VideoCall /> : <LocationOn />}
+                      />
+                    </Box>
+                  </Box>
+
+                  <Grid container spacing={3}>
+                    <Grid item xs={12} md={6}>
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+                        <Person sx={{ mr: 2, color: 'primary.main', mt: 0.5 }} />
+                        <Box>
+                          <Typography variant="h6" color="primary">
+                            {getDoctorName(appointment)}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            {getDoctorSpecialization(appointment)}
+                          </Typography>
+                          <Typography variant="body2">
+                            {getDoctorHospital(appointment)}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            {getDoctorExperience(appointment)} experience
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Grid>
+
+                    <Grid item xs={12} md={6}>
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+                        <AccessTime sx={{ mr: 2, color: 'primary.main', mt: 0.5 }} />
+                        <Box>
+                          <Typography variant="h6">
+                            {formatDate(appointment.date)}
+                          </Typography>
+                          <Typography variant="body1" color="primary.main">
+                            {appointment.time || 'Time not set'}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Grid>
+                  </Grid>
+
+                  {appointment.symptoms && (
+                    <Box sx={{ mb: 2, p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Symptoms / Reason for visit:
+                      </Typography>
+                      <Typography variant="body2">
+                        {appointment.symptoms}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                    <Box>
+                      <Typography variant="body2" color="textSecondary">
+                        Patient: {getPatientName(appointment)} 
+                        {getPatientAge(appointment) && ` (${getPatientAge(appointment)} yrs`}
+                        {getPatientGender(appointment) && `, ${getPatientGender(appointment)})`}
+                        {!getPatientAge(appointment) && !getPatientGender(appointment) && ')'}
+                      </Typography>
+                      <Typography variant="h6" color="primary">
+                        Fee: ₹{appointment.consultationFee || '0'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      {appointment.status === 'confirmed' && appointment.type === 'video' && (
+                        <Button 
+                          variant="contained" 
+                          size="small"
+                          startIcon={<VideoCall />}
+                          onClick={() => handleJoinCall(appointment.appointmentId)}
+                        >
+                          Join Call
+                        </Button>
+                      )}
+                      {(appointment.status === 'pending' || appointment.status === 'confirmed') && (
+                        <Button 
+                          variant="outlined" 
+                          color="error" 
+                          size="small"
+                          onClick={() => handleCancelAppointment(appointment._id)}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                      <Button variant="outlined" size="small">
+                        Reschedule
+                      </Button>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
     </Container>
   );
 };
 
-export default BookAppointment;
+export default Appointments;

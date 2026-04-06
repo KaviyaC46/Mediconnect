@@ -1,226 +1,364 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Card,
-  CardContent,
   Typography,
   Box,
-  Chip,
+  Card,
+  CardContent,
   Grid,
-  Button,
-  Divider,
+  Chip,
+  CircularProgress,
   Alert,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
+import { ShoppingCart, LocalPharmacy, QrCode, Payment } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const Orders = () => {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
 
   useEffect(() => {
     if (user) {
-      fetchOrders();
+      loadOrders();
     }
   }, [user]);
 
-  const fetchOrders = async () => {
+  const loadOrders = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/orders/my-orders');
-      setOrders(response.data);
+      setLoading(true);
+      
+      // Load from localStorage
+      const savedOrders = JSON.parse(localStorage.getItem('userOrders') || '[]');
+      
+      // Filter orders for current user and medicine type
+      const userMedicineOrders = savedOrders.filter(order => {
+        const isCurrentUser = order.userId === (user._id || user.id);
+        const hasMedicineItems = order.items.some(item => item.type === 'medicine');
+        return isCurrentUser && hasMedicineItems;
+      });
+
+      if (userMedicineOrders.length > 0) {
+        setOrders(userMedicineOrders);
+      } else {
+        // Fallback to mock data
+        const mockOrders = getMockMedicineOrders();
+        setOrders(mockOrders);
+      }
+
     } catch (error) {
-      console.error('Error fetching orders:', error);
+      console.error('Error loading orders:', error);
+      setError('Failed to load orders');
+      const mockOrders = getMockMedicineOrders();
+      setOrders(mockOrders);
     } finally {
       setLoading(false);
     }
   };
 
+  const getMockMedicineOrders = () => {
+    return [
+      {
+        _id: '1',
+        orderId: 'ORD001',
+        items: [
+          { name: 'Paracetamol', type: 'medicine', price: 25, quantity: 2 },
+          { name: 'Vitamin C', type: 'medicine', price: 150, quantity: 1 }
+        ],
+        totalAmount: 200,
+        orderStatus: 'pending_payment', // New status for pending payment verification
+        paymentStatus: 'pending_verification', // New payment status
+        createdAt: new Date('2024-01-15'),
+        shippingAddress: {
+          name: user?.name || 'John Doe',
+          address: '123 Main St, City, State'
+        },
+        paymentMethod: 'upi',
+        upiTransactionId: '' // Will be filled after payment
+      }
+    ];
+  };
+
+  const handleMakePayment = (order) => {
+    setSelectedOrder(order);
+    setPaymentDialogOpen(true);
+  };
+
+  const handlePaymentComplete = async (transactionId) => {
+    try {
+      // Update order with transaction ID and mark as pending verification
+      const updatedOrders = orders.map(order => 
+        order._id === selectedOrder._id 
+          ? {
+              ...order,
+              paymentStatus: 'pending_verification',
+              orderStatus: 'pending_approval',
+              upiTransactionId: transactionId,
+              paymentDate: new Date().toISOString()
+            }
+          : order
+      );
+
+      setOrders(updatedOrders);
+      localStorage.setItem('userOrders', JSON.stringify(updatedOrders));
+
+      // In a real app, you would send this to your backend
+      // await axios.post(`${API_BASE_URL}/api/orders/${selectedOrder._id}/payment`, {
+      //   upiTransactionId: transactionId,
+      //   paymentStatus: 'pending_verification'
+      // });
+
+      setPaymentDialogOpen(false);
+      alert('Payment details submitted! Your order is pending admin verification.');
+
+    } catch (error) {
+      console.error('Error updating payment:', error);
+      alert('Error submitting payment details. Please try again.');
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
-      case 'delivered': return 'success';
-      case 'shipped': return 'info';
-      case 'confirmed': return 'primary';
-      case 'pending': return 'warning';
-      case 'cancelled': return 'error';
+      case 'confirmed':
+      case 'completed': 
+      case 'approved': return 'success';
+      case 'pending':
+      case 'pending_payment': 
+      case 'pending_approval': return 'warning';
+      case 'cancelled': 
+      case 'rejected': return 'error';
       default: return 'default';
     }
   };
 
-  const getPaymentStatusColor = (status) => {
+  const getPaymentColor = (status) => {
     switch (status) {
-      case 'completed': return 'success';
-      case 'pending': return 'warning';
-      case 'failed': return 'error';
+      case 'completed': 
+      case 'verified': return 'success';
+      case 'pending': 
+      case 'pending_verification': return 'warning';
+      case 'failed': 
+      case 'rejected': return 'error';
       default: return 'default';
     }
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const getStatusText = (orderStatus, paymentStatus) => {
+    if (orderStatus === 'pending_approval') {
+      return 'Pending Admin Approval';
+    }
+    if (paymentStatus === 'pending_verification') {
+      return 'Payment Verification Pending';
+    }
+    return orderStatus;
   };
 
-  const calculateOrderTotal = (order) => {
-    return order.items?.reduce((total, item) => total + (item.price * item.quantity), 0) || 0;
+  const getOrderDate = (order) => {
+    if (order.createdAt instanceof Date) {
+      return order.createdAt.toLocaleDateString();
+    } else if (typeof order.createdAt === 'string') {
+      return new Date(order.createdAt).toLocaleDateString();
+    } else {
+      return 'Recent';
+    }
+  };
+
+  const isRecentOrder = (order) => {
+    const orderTime = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    return orderTime > fiveMinutesAgo;
   };
 
   if (!user) {
     return (
       <Container sx={{ mt: 4, textAlign: 'center' }}>
-        <Alert severity="warning">
-          Please login to view your orders.
-        </Alert>
-        <Button 
-          variant="contained" 
-          sx={{ mt: 2 }}
-          onClick={() => navigate('/login')}
-        >
+        <Typography variant="h5" gutterBottom>
+          Please login to view your orders
+        </Typography>
+        <Button variant="contained" onClick={() => navigate('/login')}>
           Login
         </Button>
       </Container>
     );
   }
 
-  if (loading) {
-    return (
-      <Container sx={{ mt: 4, textAlign: 'center' }}>
-        <Typography>Loading orders...</Typography>
-      </Container>
-    );
-  }
-
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h4" component="h1">
-          My Medicine Orders
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <LocalPharmacy sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+        <Typography variant="h4">
+          Medicine Orders
         </Typography>
-        <Button 
-          variant="contained" 
-          onClick={() => navigate('/pharmacy')}
-        >
-          Shop Medicines
-        </Button>
       </Box>
 
-      {orders.length === 0 ? (
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Show success message if order was recently placed */}
+      {orders.some(order => isRecentOrder(order)) && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          Your recent order has been placed successfully! It will be processed soon.
+        </Alert>
+      )}
+
+      {loading ? (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+          <CircularProgress />
+        </Box>
+      ) : orders.length === 0 ? (
         <Card>
-          <CardContent sx={{ textAlign: 'center', py: 6 }}>
-            <Typography variant="h6" gutterBottom color="textSecondary">
+          <CardContent sx={{ textAlign: 'center', py: 4 }}>
+            <ShoppingCart sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" gutterBottom>
               No Medicine Orders Found
             </Typography>
-            <Typography variant="body1" color="textSecondary" gutterBottom sx={{ mb: 3 }}>
+            <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
               You haven't placed any medicine orders yet.
             </Typography>
-            <Button 
-              variant="contained" 
-              size="large"
-              onClick={() => navigate('/pharmacy')}
-            >
-              Browse Medicines
+            <Button variant="contained" onClick={() => navigate('/pharmacy')}>
+              Shop Medicines
             </Button>
           </CardContent>
         </Card>
       ) : (
         <Grid container spacing={3}>
           {orders.map((order) => (
-            <Grid item xs={12} key={order._id}>
-              <Card sx={{ transition: 'box-shadow 0.3s', '&:hover': { boxShadow: 3 } }}>
+            <Grid item xs={12} key={order._id || order.orderId}>
+              <Card elevation={2} sx={{ 
+                borderLeft: isRecentOrder(order) ? 4 : 0,
+                borderColor: isRecentOrder(order) ? 'success.main' : 'transparent'
+              }}>
                 <CardContent>
-                  {/* Order Header */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                     <Box>
                       <Typography variant="h6" gutterBottom>
-                        Order # {order._id.slice(-8).toUpperCase()}
+                        Order #{order.orderId}
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        Ordered on {formatDate(order.createdAt)}
+                        Placed on {getOrderDate(order)}
+                        {isRecentOrder(order) && (
+                          <Chip 
+                            label="New" 
+                            color="success" 
+                            size="small" 
+                            sx={{ ml: 1 }}
+                          />
+                        )}
                       </Typography>
-                      {order.shippingAddress && (
-                        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                          Deliver to: {order.shippingAddress.address}, {order.shippingAddress.city}
-                        </Typography>
-                      )}
                     </Box>
-                    <Box sx={{ textAlign: 'right' }}>
+                    <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column', alignItems: 'flex-end' }}>
                       <Chip 
-                        label={order.status?.charAt(0).toUpperCase() + order.status?.slice(1)} 
-                        color={getStatusColor(order.status)}
-                        sx={{ mb: 1 }}
+                        label={getStatusText(order.orderStatus, order.paymentStatus)} 
+                        color={getStatusColor(order.orderStatus)}
+                        size="small"
                       />
-                      <Box>
-                        <Chip 
-                          label={`Payment: ${order.paymentStatus}`}
-                          color={getPaymentStatusColor(order.paymentStatus)}
-                          size="small"
-                          variant="outlined"
-                        />
-                      </Box>
+                      <Chip 
+                        label={`Payment: ${order.paymentStatus}`} 
+                        color={getPaymentColor(order.paymentStatus)}
+                        size="small"
+                        variant="outlined"
+                      />
                     </Box>
                   </Box>
 
-                  <Divider sx={{ my: 2 }} />
+                  {order.shippingAddress && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Shipping Address:
+                      </Typography>
+                      <Typography variant="body2">
+                        {order.shippingAddress.name}<br />
+                        {order.shippingAddress.address}
+                        {order.shippingAddress.city && `, ${order.shippingAddress.city}`}
+                        {order.shippingAddress.pincode && ` - ${order.shippingAddress.pincode}`}
+                      </Typography>
+                    </Box>
+                  )}
 
-                  {/* Order Items */}
                   <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
-                      Order Items:
+                    <Typography variant="subtitle2" gutterBottom>
+                      Items ({order.items.length}):
                     </Typography>
-                    {order.items?.map((item, index) => (
-                      <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1 }}>
+                    {order.items.map((item, index) => (
+                      <Box key={index} sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        py: 1,
+                        borderBottom: index < order.items.length - 1 ? 1 : 0,
+                        borderColor: 'divider'
+                      }}>
                         <Box>
-                          <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
-                            {item.medicine?.name || 'Medicine'}
+                          <Typography variant="body2" fontWeight="medium">
+                            {item.name}
                           </Typography>
                           <Typography variant="body2" color="textSecondary">
-                            {item.medicine?.brand} • Qty: {item.quantity}
+                            {item.type === 'medicine' ? 'Medicine' : 'Lab Test'} • Qty: {item.quantity}
                           </Typography>
-                          {item.medicine?.prescriptionRequired && (
-                            <Chip label="Prescription Required" size="small" color="warning" sx={{ mt: 0.5 }} />
-                          )}
                         </Box>
-                        <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
-                          ₹{(item.price * item.quantity).toFixed(2)}
+                        <Typography variant="body2" fontWeight="bold">
+                          ₹{item.price * item.quantity}
                         </Typography>
                       </Box>
                     ))}
                   </Box>
 
-                  <Divider sx={{ my: 2 }} />
+                  {order.upiTransactionId && (
+                    <Box sx={{ mb: 2, p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Payment Details:
+                      </Typography>
+                      <Typography variant="body2">
+                        UPI Transaction ID: {order.upiTransactionId}
+                      </Typography>
+                      {order.paymentDate && (
+                        <Typography variant="body2" color="textSecondary">
+                          Paid on: {new Date(order.paymentDate).toLocaleDateString()}
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
 
-                  {/* Order Summary */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 1, borderTop: 1, borderColor: 'divider' }}>
                     <Typography variant="h6">
-                      Total Amount:
+                      Total: ₹{order.totalAmount}
                     </Typography>
-                    <Typography variant="h5" color="primary" sx={{ fontWeight: 'bold' }}>
-                      ₹{calculateOrderTotal(order).toFixed(2)}
-                    </Typography>
-                  </Box>
-
-                  {/* Order Actions */}
-                  <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'flex-end' }}>
-                    {order.status === 'pending' && (
-                      <Button variant="outlined" color="error" size="small">
-                        Cancel Order
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      {order.paymentStatus === 'pending' && (
+                        <Button 
+                          variant="contained" 
+                          size="small"
+                          startIcon={<Payment />}
+                          onClick={() => handleMakePayment(order)}
+                        >
+                          Make Payment
+                        </Button>
+                      )}
+                      {(order.paymentStatus === 'pending_verification' || order.orderStatus === 'pending_approval') && (
+                        <Button variant="outlined" size="small" disabled>
+                          Waiting for Approval
+                        </Button>
+                      )}
+                      <Button variant="outlined" size="small">
+                        Track Order
                       </Button>
-                    )}
-                    <Button variant="outlined" size="small">
-                      View Details
-                    </Button>
-                    {order.status === 'delivered' && (
-                      <Button variant="contained" size="small">
-                        Reorder
-                      </Button>
-                    )}
+                    </Box>
                   </Box>
                 </CardContent>
               </Card>
@@ -229,40 +367,83 @@ const Orders = () => {
         </Grid>
       )}
 
-      {/* Quick Stats */}
-      {orders.length > 0 && (
-        <Box sx={{ mt: 4, p: 3, bgcolor: 'background.default', borderRadius: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Order Summary
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="primary">
-                {orders.length}
+      {/* Payment Instructions Dialog */}
+      <Dialog 
+        open={paymentDialogOpen} 
+        onClose={() => setPaymentDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Payment sx={{ mr: 1 }} />
+            Complete Your Payment
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ textAlign: 'center', py: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              Amount to Pay: ₹{selectedOrder?.totalAmount}
+            </Typography>
+            
+            <Box sx={{ my: 3, p: 3, backgroundColor: 'grey.50', borderRadius: 2 }}>
+              <QrCode sx={{ fontSize: 120, color: 'primary.main', mb: 2 }} />
+              <Typography variant="h6" gutterBottom>
+                Scan QR Code to Pay
               </Typography>
-              <Typography variant="body2">Total Orders</Typography>
-            </Grid>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="success.main">
-                {orders.filter(o => o.status === 'delivered').length}
+              <Typography variant="body1" color="textSecondary" gutterBottom>
+                UPI ID: <strong>mediconnect@upi</strong>
               </Typography>
-              <Typography variant="body2">Delivered</Typography>
-            </Grid>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="warning.main">
-                {orders.filter(o => o.status === 'pending').length}
+              <Typography variant="body2" color="textSecondary">
+                Please use your name as payment reference
               </Typography>
-              <Typography variant="body2">Pending</Typography>
-            </Grid>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="info.main">
-                {orders.filter(o => o.status === 'shipped').length}
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                Payment Instructions:
               </Typography>
-              <Typography variant="body2">Shipped</Typography>
-            </Grid>
-          </Grid>
-        </Box>
-      )}
+              <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'left' }}>
+                1. Open your UPI app (Google Pay, PhonePe, Paytm, etc.)<br />
+                2. Scan the QR code above or enter UPI ID manually<br />
+                3. Pay the exact amount: ₹{selectedOrder?.totalAmount}<br />
+                4. Take a screenshot of the payment confirmation<br />
+                5. Enter your UPI Transaction ID below
+              </Typography>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Button 
+                variant="outlined" 
+                onClick={() => {
+                  // Generate a mock transaction ID for demo
+                  const mockTransactionId = 'TXN' + Date.now();
+                  handlePaymentComplete(mockTransactionId);
+                }}
+                sx={{ mr: 2 }}
+              >
+                I Have Paid (Demo)
+              </Button>
+              <Button 
+                variant="contained"
+                onClick={() => {
+                  const transactionId = prompt('Please enter your UPI Transaction ID:');
+                  if (transactionId) {
+                    handlePaymentComplete(transactionId);
+                  }
+                }}
+              >
+                Enter Transaction ID
+              </Button>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentDialogOpen(false)}>
+            Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

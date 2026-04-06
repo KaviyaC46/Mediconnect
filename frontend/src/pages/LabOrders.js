@@ -1,338 +1,311 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Card,
-  CardContent,
   Typography,
   Box,
-  Chip,
+  Card,
+  CardContent,
   Grid,
-  Button,
-  Divider,
+  Chip,
+  CircularProgress,
   Alert,
+  Button
 } from '@mui/material';
+import { Science, CalendarToday, LocalHospital } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const LabOrders = () => {
-  const [labOrders, setLabOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (user) {
-      fetchLabOrders();
+      loadOrders();
     }
   }, [user]);
 
-  const fetchLabOrders = async () => {
+  const loadOrders = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/laborders/my-orders');
-      setLabOrders(response.data);
+      setLoading(true);
+      
+      // Try to load from localStorage first
+      const savedOrders = JSON.parse(localStorage.getItem('userOrders') || '[]');
+      
+      // Filter orders for current user and lab test type
+      const userLabOrders = savedOrders.filter(order => {
+        const isCurrentUser = order.userId === (user._id || user.id);
+        const hasLabTestItems = order.items.some(item => item.type === 'labtest');
+        return isCurrentUser && hasLabTestItems;
+      });
+
+      if (userLabOrders.length > 0) {
+        setOrders(userLabOrders);
+      } else {
+        // If no orders in localStorage, try backend API
+        try {
+          const response = await axios.get(`${API_BASE_URL}/api/orders/user/${user._id || user.id}`);
+          if (response.data.success) {
+            const labOrders = response.data.data.filter(order => 
+              order.items.some(item => item.type === 'labtest')
+            );
+            setOrders(labOrders);
+          }
+        } catch (apiError) {
+          console.log('Backend API not available, using mock data');
+          // Fallback to mock data if backend fails
+          const mockOrders = getMockLabOrders();
+          setOrders(mockOrders);
+        }
+      }
+
     } catch (error) {
-      console.error('Error fetching lab orders:', error);
+      console.error('Error loading lab orders:', error);
+      setError('Failed to load lab orders');
+      // Fallback to mock data
+      const mockOrders = getMockLabOrders();
+      setOrders(mockOrders);
     } finally {
       setLoading(false);
     }
   };
 
+  const getMockLabOrders = () => {
+    return [
+      {
+        _id: '1',
+        orderId: 'LAB001',
+        items: [
+          { 
+            name: 'Complete Blood Count (CBC)', 
+            type: 'labtest', 
+            price: 299, 
+            quantity: 1,
+            testDetails: {
+              patientName: user?.name || 'John Doe',
+              patientAge: 30,
+              patientGender: 'Male',
+              preferredDate: '2024-01-20',
+              preferredTime: '10:00 AM'
+            }
+          }
+        ],
+        totalAmount: 299,
+        orderStatus: 'confirmed',
+        paymentStatus: 'completed',
+        createdAt: new Date('2024-01-15'),
+        shippingAddress: {
+          name: user?.name || 'John Doe',
+          phone: '9876543210',
+          address: '123 Main St, City, State'
+        }
+      }
+    ];
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
+      case 'confirmed':
       case 'completed': return 'success';
-      case 'processing': return 'info';
-      case 'sample_collected': return 'primary';
-      case 'confirmed': return 'primary';
       case 'pending': return 'warning';
+      case 'cancelled': return 'error';
       default: return 'default';
     }
   };
 
-  const getStatusText = (status) => {
-    const statusMap = {
-      'pending': 'Pending',
-      'confirmed': 'Confirmed',
-      'sample_collected': 'Sample Collected',
-      'processing': 'Processing',
-      'completed': 'Completed'
-    };
-    return statusMap[status] || status;
-  };
-
-  const getPaymentStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return 'success';
-      case 'pending': return 'warning';
-      case 'failed': return 'error';
-      default: return 'default';
+  const getOrderDate = (order) => {
+    if (order.createdAt instanceof Date) {
+      return order.createdAt.toLocaleDateString();
+    } else if (typeof order.createdAt === 'string') {
+      return new Date(order.createdAt).toLocaleDateString();
+    } else {
+      return 'Recent';
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Not scheduled';
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
-
-  const formatDateTime = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const calculateOrderTotal = (order) => {
-    return order.tests?.reduce((total, test) => total + test.price, 0) || 0;
-  };
-
-  const downloadReport = (orderId) => {
-    // Simulate report download
-    alert(`Downloading report for order ${orderId.slice(-8).toUpperCase()}`);
-    // In real implementation, this would download a PDF
-  };
-
-  const rescheduleTest = (orderId) => {
-    alert(`Reschedule functionality for order ${orderId.slice(-8).toUpperCase()}`);
-    // In real implementation, this would open a rescheduling modal
+  // Function to check if this order was just placed (within last 5 minutes)
+  const isRecentOrder = (order) => {
+    const orderTime = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    return orderTime > fiveMinutesAgo;
   };
 
   if (!user) {
     return (
       <Container sx={{ mt: 4, textAlign: 'center' }}>
-        <Alert severity="warning">
-          Please login to view your lab test orders.
-        </Alert>
-        <Button 
-          variant="contained" 
-          sx={{ mt: 2 }}
-          onClick={() => navigate('/login')}
-        >
+        <Typography variant="h5" gutterBottom>
+          Please login to view your lab orders
+        </Typography>
+        <Button variant="contained" onClick={() => navigate('/login')}>
           Login
         </Button>
       </Container>
     );
   }
 
-  if (loading) {
-    return (
-      <Container sx={{ mt: 4, textAlign: 'center' }}>
-        <Typography>Loading lab test orders...</Typography>
-      </Container>
-    );
-  }
-
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h4" component="h1">
-          My Lab Test Orders
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <Science sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+        <Typography variant="h4">
+          Lab Test Orders
         </Typography>
-        <Button 
-          variant="contained" 
-          onClick={() => navigate('/lab-tests')}
-        >
-          Book New Test
-        </Button>
       </Box>
 
-      {labOrders.length === 0 ? (
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Show success message if order was recently placed */}
+      {orders.some(order => isRecentOrder(order)) && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          Your recent lab test has been booked successfully! Sample collection will be scheduled as per your preference.
+        </Alert>
+      )}
+
+      {loading ? (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+          <CircularProgress />
+        </Box>
+      ) : orders.length === 0 ? (
         <Card>
-          <CardContent sx={{ textAlign: 'center', py: 6 }}>
-            <Typography variant="h6" gutterBottom color="textSecondary">
+          <CardContent sx={{ textAlign: 'center', py: 4 }}>
+            <LocalHospital sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" gutterBottom>
               No Lab Test Orders Found
             </Typography>
-            <Typography variant="body1" color="textSecondary" gutterBottom sx={{ mb: 3 }}>
+            <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
               You haven't booked any lab tests yet.
             </Typography>
-            <Button 
-              variant="contained" 
-              size="large"
-              onClick={() => navigate('/lab-tests')}
-            >
-              Browse Lab Tests
+            <Button variant="contained" onClick={() => navigate('/lab-tests')}>
+              Book Lab Tests
             </Button>
           </CardContent>
         </Card>
       ) : (
         <Grid container spacing={3}>
-          {labOrders.map((order) => (
-            <Grid item xs={12} key={order._id}>
-              <Card sx={{ transition: 'box-shadow 0.3s', '&:hover': { boxShadow: 3 } }}>
+          {orders.map((order) => (
+            <Grid item xs={12} key={order._id || order.orderId}>
+              <Card elevation={2} sx={{ 
+                borderLeft: isRecentOrder(order) ? 4 : 0,
+                borderColor: isRecentOrder(order) ? 'success.main' : 'transparent'
+              }}>
                 <CardContent>
-                  {/* Order Header */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                     <Box>
                       <Typography variant="h6" gutterBottom>
-                        Lab Order # {order._id.slice(-8).toUpperCase()}
+                        Order #{order.orderId}
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        Booked on {formatDateTime(order.createdAt)}
+                        Booked on {getOrderDate(order)}
+                        {isRecentOrder(order) && (
+                          <Chip 
+                            label="New" 
+                            color="success" 
+                            size="small" 
+                            sx={{ ml: 1 }}
+                          />
+                        )}
                       </Typography>
-                      {order.patientDetails && (
-                        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                          Patient: {order.patientDetails.name} • {order.patientDetails.age} yrs • {order.patientDetails.gender}
-                        </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Chip 
+                        label={order.orderStatus} 
+                        color={getStatusColor(order.orderStatus)}
+                        size="small"
+                      />
+                      <Chip 
+                        label={`Payment: ${order.paymentStatus}`} 
+                        color={getStatusColor(order.paymentStatus)}
+                        size="small"
+                        variant="outlined"
+                      />
+                    </Box>
+                  </Box>
+
+                  {order.items.map((item, index) => (
+                    <Box key={index} sx={{ mb: 2, p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
+                      <Typography variant="h6" color="primary" gutterBottom>
+                        {item.name}
+                      </Typography>
+                      <Typography variant="body1" gutterBottom>
+                        ₹{item.price}
+                      </Typography>
+                      
+                      {item.testDetails && (
+                        <Box sx={{ mt: 1 }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Test Details:
+                          </Typography>
+                          <Grid container spacing={1}>
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="body2">
+                                <strong>Patient:</strong> {item.testDetails.patientName}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="body2">
+                                <strong>Age/Gender:</strong> {item.testDetails.patientAge} yrs, {item.testDetails.patientGender}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="body2">
+                                <strong>Preferred Date:</strong> {item.testDetails.preferredDate}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="body2">
+                                <strong>Time:</strong> {item.testDetails.preferredTime}
+                              </Typography>
+                            </Grid>
+                          </Grid>
+                        </Box>
                       )}
                     </Box>
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Chip 
-                        label={getStatusText(order.status)} 
-                        color={getStatusColor(order.status)}
-                        sx={{ mb: 1 }}
-                      />
-                      <Box>
-                        <Chip 
-                          label={`Payment: ${order.paymentStatus}`}
-                          color={getPaymentStatusColor(order.paymentStatus)}
-                          size="small"
-                          variant="outlined"
-                        />
-                      </Box>
+                  ))}
+
+                  {order.shippingAddress && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Collection Address:
+                      </Typography>
+                      <Typography variant="body2">
+                        {order.shippingAddress.name} • {order.shippingAddress.phone}<br />
+                        {order.shippingAddress.address}
+                        {order.shippingAddress.city && `, ${order.shippingAddress.city}`}
+                        {order.shippingAddress.pincode && ` - ${order.shippingAddress.pincode}`}
+                      </Typography>
                     </Box>
-                  </Box>
+                  )}
 
-                  <Divider sx={{ my: 2 }} />
-
-                  {/* Test Details */}
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
-                      Tests Booked:
-                    </Typography>
-                    {order.tests?.map((test, index) => (
-                      <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', py: 1 }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
-                            {test.test?.name || 'Lab Test'}
-                          </Typography>
-                          <Typography variant="body2" color="textSecondary">
-                            {test.test?.category}
-                          </Typography>
-                          {test.test?.fastingRequired && (
-                            <Chip label="Fasting Required" size="small" color="warning" sx={{ mt: 0.5 }} />
-                          )}
-                          {test.test?.reportTime && (
-                            <Typography variant="body2" color="textSecondary">
-                              Report in: {test.test.reportTime}
-                            </Typography>
-                          )}
-                        </Box>
-                        <Typography variant="body1" sx={{ fontWeight: 'medium', minWidth: 100, textAlign: 'right' }}>
-                          ₹{test.price.toFixed(2)}
-                        </Typography>
-                      </Box>
-                    ))}
-                  </Box>
-
-                  <Divider sx={{ my: 2 }} />
-
-                  {/* Appointment Details */}
-                  <Grid container spacing={2} sx={{ mb: 2 }}>
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="subtitle2" color="textSecondary">
-                        Preferred Date & Time
-                      </Typography>
-                      <Typography variant="body1">
-                        {formatDate(order.preferredDate)} at {order.preferredTime || 'Anytime'}
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="subtitle2" color="textSecondary">
-                        Collection Address
-                      </Typography>
-                      <Typography variant="body1">
-                        {order.address ? 
-                          `${order.address.address}, ${order.address.city}` : 
-                          'Home Collection'
-                        }
-                      </Typography>
-                    </Grid>
-                  </Grid>
-
-                  <Divider sx={{ my: 2 }} />
-
-                  {/* Order Summary */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 1, borderTop: 1, borderColor: 'divider' }}>
                     <Typography variant="h6">
-                      Total Amount:
+                      Total: ₹{order.totalAmount}
                     </Typography>
-                    <Typography variant="h5" color="primary" sx={{ fontWeight: 'bold' }}>
-                      ₹{calculateOrderTotal(order).toFixed(2)}
-                    </Typography>
-                  </Box>
-
-                  {/* Order Actions */}
-                  <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                    {order.status === 'pending' && (
-                      <Button variant="outlined" color="error" size="small">
-                        Cancel Order
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button variant="outlined" size="small">
+                        View Report
                       </Button>
-                    )}
-                    {order.status === 'confirmed' && (
-                      <Button variant="outlined" size="small" onClick={() => rescheduleTest(order._id)}>
-                        Reschedule
-                      </Button>
-                    )}
-                    {order.status === 'completed' && (
-                      <Button variant="contained" size="small" onClick={() => downloadReport(order._id)}>
-                        Download Report
-                      </Button>
-                    )}
-                    <Button variant="outlined" size="small">
-                      View Details
-                    </Button>
-                    {order.status === 'completed' && (
-                      <Button variant="outlined" size="small" onClick={() => navigate('/lab-tests')}>
-                        Book Again
-                      </Button>
-                    )}
+                      {order.orderStatus === 'pending' && (
+                        <Button variant="outlined" size="small">
+                          Reschedule
+                        </Button>
+                      )}
+                    </Box>
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
           ))}
         </Grid>
-      )}
-
-      {/* Quick Stats */}
-      {labOrders.length > 0 && (
-        <Box sx={{ mt: 4, p: 3, bgcolor: 'background.default', borderRadius: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Lab Test Summary
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="primary">
-                {labOrders.length}
-              </Typography>
-              <Typography variant="body2">Total Tests</Typography>
-            </Grid>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="success.main">
-                {labOrders.filter(o => o.status === 'completed').length}
-              </Typography>
-              <Typography variant="body2">Completed</Typography>
-            </Grid>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="info.main">
-                {labOrders.filter(o => o.status === 'processing').length}
-              </Typography>
-              <Typography variant="body2">Processing</Typography>
-            </Grid>
-            <Grid item xs={6} md={3} textAlign="center">
-              <Typography variant="h4" color="warning.main">
-                {labOrders.filter(o => o.status === 'pending').length}
-              </Typography>
-              <Typography variant="body2">Pending</Typography>
-            </Grid>
-          </Grid>
-        </Box>
       )}
     </Container>
   );

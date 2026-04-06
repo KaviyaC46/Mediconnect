@@ -1,44 +1,66 @@
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
+  orderId: {
+    type: String,
+    unique: true,
+    required: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'User'
+    type: String,
+    required: true
   },
   items: [{
-    medicineId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Medicine',
-      required: true
-    },
+    productId: String,
     name: String,
+    type: String,
     price: Number,
-    quantity: Number
+    quantity: Number,
+    testDetails: {
+      patientName: String,
+      patientAge: Number,
+      patientGender: String,
+      preferredDate: Date,
+      preferredTime: String
+    }
   }],
   totalAmount: {
     type: Number,
     required: true
   },
-  shippingAddress: {
-    address: String,
-    city: String,
-    pincode: String,
-    phone: String
-  },
   paymentMethod: {
     type: String,
-    enum: ['card', 'upi', 'cod'],
-    default: 'cod'
+    enum: ['upi', 'card', 'cash'],
+    default: 'upi'
   },
-  status: {
+  paymentStatus: {
     type: String,
-    enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
+    enum: ['pending', 'completed', 'failed', 'refunded'],
     default: 'pending'
   },
-  trackingNumber: String
-}, {
-  timestamps: true
+  upiTransactionId: String,
+  orderStatus: {
+    type: String,
+    enum: ['pending', 'confirmed', 'processing', 'completed', 'cancelled'],
+    default: 'pending'
+  },
+  shippingAddress: {
+    name: String,
+    phone: String,
+    address: String,
+    city: String,
+    pincode: String
+  },
+  adminApproval: {
+    approved: { type: Boolean, default: false },
+    approvedBy: String,
+    approvedAt: Date,
+    notes: String
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
 module.exports = mongoose.model('Order', orderSchema);

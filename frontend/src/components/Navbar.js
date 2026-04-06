@@ -27,6 +27,7 @@ import {
   Science,
   CalendarMonth,
   Assignment,
+  AdminPanelSettings, // ADD THIS IMPORT
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -147,6 +148,20 @@ const Navbar = () => {
                   <ShoppingCart />
                 </Badge>
               </IconButton>
+
+              {/* ADMIN BUTTON - ADD THIS */}
+              <Button 
+                color="inherit" 
+                onClick={() => navigate('/admin/login')}
+                startIcon={<AdminPanelSettings />}
+                sx={{
+                  borderBottom: isActiveRoute('/admin/login') || isActiveRoute('/admin/dashboard') ? '2px solid white' : 'none',
+                  borderRadius: 0,
+                  fontWeight: (isActiveRoute('/admin/login') || isActiveRoute('/admin/dashboard')) ? 'bold' : 'normal',
+                }}
+              >
+                Admin
+              </Button>
 
               {user ? (
                 <>
@@ -314,6 +329,29 @@ const Navbar = () => {
               </ListItem>
             ))}
 
+            {/* Admin for mobile - ADD THIS */}
+            <ListItem
+              button
+              onClick={() => handleNavigation('/admin/login')}
+              selected={isActiveRoute('/admin/login') || isActiveRoute('/admin/dashboard')}
+              sx={{
+                borderRadius: 1,
+                mb: 0.5,
+                '&.Mui-selected': {
+                  backgroundColor: 'primary.main',
+                  color: 'white',
+                  '&:hover': {
+                    backgroundColor: 'primary.dark',
+                  },
+                },
+              }}
+            >
+              <ListItemIcon sx={{ color: 'inherit' }}>
+                <AdminPanelSettings />
+              </ListItemIcon>
+              <ListItemText primary="Admin" />
+            </ListItem>
+
             {/* User Navigation (if logged in) */}
             {user && userNavItems.map((item) => (
               <ListItem
@@ -422,6 +460,10 @@ const Navbar = () => {
               </ListItem>
             )}
           </List>
+          // In your Navbar component, ensure you have:
+<Button onClick={() => navigate('/doctors')}>
+  Book Appointment
+</Button>
 
           {/* User info in mobile drawer */}
           {user && (

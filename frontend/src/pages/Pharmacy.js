@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Grid,
@@ -14,22 +14,13 @@ import {
   Select,
   MenuItem,
   CircularProgress,
-  Slider,
-  Pagination,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Snackbar,
   Alert
 } from '@mui/material';
 import {
   Search,
-  FilterList,
   LocalPharmacy,
-  ShoppingCart,
-  Add,
-  Remove
+  ShoppingCart
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -38,126 +29,152 @@ import axios from 'axios';
 const Pharmacy = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [filteredMedicines, setFilteredMedicines] = useState([]);
+  const [medicines, setMedicines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [cart, setCart] = useState([]);
-  const [cartOpen, setCartOpen] = useState(false);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
   const [priceRange, setPriceRange] = useState([0, 5000]);
-  const [prescriptionRequired, setPrescriptionRequired] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
 
   // Alert states
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
 
-  // Fetch medicines function
-  const fetchMedicines = useCallback(async (pageNum = 1) => {
+  // Fetch medicines
+  const fetchMedicines = async (pageNum = 1) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
+      const params = {
         page: pageNum,
         limit: 12,
-        inStock: true
+        search: searchTerm,
+        category: category,
+        brand: brand,
+        minPrice: priceRange[0],
+        maxPrice: priceRange[1]
+      };
+
+      // Remove empty params
+      Object.keys(params).forEach(key => {
+        if (params[key] === '' || params[key] === null || params[key] === undefined) {
+          delete params[key];
+        }
       });
 
-      if (searchTerm) params.append('search', searchTerm);
-      if (category) params.append('category', category);
-      if (brand) params.append('brand', brand);
-      if (prescriptionRequired) params.append('prescriptionRequired', prescriptionRequired);
-      params.append('minPrice', priceRange[0]);
-      params.append('maxPrice', priceRange[1]);
-
-      console.log('Fetching medicines with params:', params.toString());
-
-      const response = await axios.get(`http://localhost:5000/api/medicines?${params}`);
-      
-      console.log('Medicines API Response:', response.data);
+      const response = await axios.get('http://localhost:5000/api/medicines', { params });
       
       if (response.data.success) {
-        setFilteredMedicines(response.data.data);
-        setTotalPages(response.data.pagination.pages);
-        setPage(pageNum);
+        setMedicines(response.data.data);
       } else {
         showAlert('Failed to fetch medicines', 'error');
       }
     } catch (error) {
       console.error('Error fetching medicines:', error);
-      showAlert('Error loading medicines. Please check if backend server is running.', 'error');
+      // Use mock data if API fails
+      setMedicines(getMockMedicines());
+      showAlert('Using demo data. Backend might be unavailable.', 'info');
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, category, brand, prescriptionRequired, priceRange]);
+  };
+
+  // Mock data for testing
+  const getMockMedicines = () => [
+    {
+      _id: '1',
+      name: 'Paracetamol 500mg',
+      brand: 'Cipla',
+      price: 25,
+      discount: 20,
+      discountedPrice: 20,
+      inStock: true,
+      prescriptionRequired: false,
+      composition: ['Paracetamol'],
+      category: 'Pain Relief',
+      description: 'Used for relief of fever and mild to moderate pain'
+    },
+    {
+      _id: '2',
+      name: 'Amoxicillin 250mg',
+      brand: 'Sun Pharma',
+      price: 45,
+      discount: 0,
+      discountedPrice: 45,
+      inStock: true,
+      prescriptionRequired: true,
+      composition: ['Amoxicillin'],
+      category: 'Antibiotic',
+      description: 'Antibiotic used to treat bacterial infections'
+    },
+    {
+      _id: '3',
+      name: 'Vitamin C 1000mg',
+      brand: 'Himalaya',
+      price: 120,
+      discount: 10,
+      discountedPrice: 108,
+      inStock: true,
+      prescriptionRequired: false,
+      composition: ['Vitamin C'],
+      category: 'Vitamin',
+      description: 'Dietary supplement for immune support'
+    },
+    {
+      _id: '4',
+      name: 'Dolo 650mg',
+      brand: 'Micro Labs',
+      price: 30,
+      discount: 15,
+      discountedPrice: 25.5,
+      inStock: true,
+      prescriptionRequired: false,
+      composition: ['Paracetamol'],
+      category: 'Pain Relief',
+      description: 'For fever and pain relief'
+    }
+  ];
 
   const fetchCategories = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/medicines/data/categories');
-      console.log('Categories API Response:', response.data);
       if (response.data.success) {
         setCategories(response.data.data);
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
+      setCategories(['Pain Relief', 'Antibiotic', 'Vitamin', 'Cardiac', 'Diabetes']);
     }
   };
 
   const fetchBrands = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/medicines/data/brands');
-      console.log('Brands API Response:', response.data);
       if (response.data.success) {
         setBrands(response.data.data);
       }
     } catch (error) {
       console.error('Error fetching brands:', error);
+      setBrands(['Cipla', 'Sun Pharma', 'Himalaya', 'Micro Labs']);
     }
-  };
-
-  const loadCartFromStorage = () => {
-    const savedCart = localStorage.getItem('pharmacyCart');
-    if (savedCart) {
-      setCart(JSON.parse(savedCart));
-    }
-  };
-
-  const saveCartToStorage = (cartData) => {
-    localStorage.setItem('pharmacyCart', JSON.stringify(cartData));
   };
 
   const showAlert = (message, severity = 'success') => {
     setAlert({ open: true, message, severity });
   };
 
-  const handleSearch = useCallback(() => {
-    setPage(1);
+  const handleSearch = () => {
     fetchMedicines(1);
-  }, [fetchMedicines]);
-
-  // Auto-search when filters change (with debounce)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchTerm || category || brand || prescriptionRequired || priceRange[1] < 5000) {
-        handleSearch();
-      }
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(timer);
-  }, [searchTerm, category, brand, prescriptionRequired, priceRange, handleSearch]); // Fixed: Added handleSearch to dependencies
+  };
 
   const clearFilters = () => {
     setSearchTerm('');
     setCategory('');
     setBrand('');
     setPriceRange([0, 5000]);
-    setPrescriptionRequired('');
-    setPage(1);
-    // Fetch all medicines when clearing filters
     fetchMedicines(1);
   };
 
@@ -168,72 +185,32 @@ const Pharmacy = () => {
       return;
     }
 
-    const existingItem = cart.find(item => item.medicineId === medicine._id);
-    let newCart;
-
+    let cart = JSON.parse(localStorage.getItem('cart') || '[]');
+    
+    const existingItem = cart.find(item => item._id === medicine._id && item.type === 'medicine');
+    
     if (existingItem) {
-      newCart = cart.map(item =>
-        item.medicineId === medicine._id
+      cart = cart.map(item =>
+        item._id === medicine._id && item.type === 'medicine'
           ? { ...item, quantity: item.quantity + 1 }
           : item
       );
     } else {
-      newCart = [...cart, {
-        medicineId: medicine._id,
-        name: medicine.name,
-        brand: medicine.brand,
-        price: medicine.discountedPrice || medicine.price,
-        image: medicine.image,
-        prescriptionRequired: medicine.prescriptionRequired,
-        quantity: 1
-      }];
+      cart.push({
+        ...medicine,
+        quantity: 1,
+        type: 'medicine'
+      });
     }
 
-    setCart(newCart);
-    saveCartToStorage(newCart);
+    localStorage.setItem('cart', JSON.stringify(cart));
+    setCart(cart);
     showAlert(`${medicine.name} added to cart`, 'success');
   };
 
-  const updateCartQuantity = (medicineId, newQuantity) => {
-    if (newQuantity === 0) {
-      removeFromCart(medicineId);
-      return;
-    }
-
-    const newCart = cart.map(item =>
-      item.medicineId === medicineId
-        ? { ...item, quantity: newQuantity }
-        : item
-    );
-
-    setCart(newCart);
-    saveCartToStorage(newCart);
-  };
-
-  const removeFromCart = (medicineId) => {
-    const newCart = cart.filter(item => item.medicineId !== medicineId);
-    setCart(newCart);
-    saveCartToStorage(newCart);
-    showAlert('Item removed from cart', 'info');
-  };
-
-  const getCartTotal = () => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-  };
-
-  const proceedToCheckout = () => {
-    if (cart.length === 0) {
-      showAlert('Cart is empty', 'warning');
-      return;
-    }
-
-    // Check for prescription required items
-    const prescriptionItems = cart.filter(item => item.prescriptionRequired);
-    if (prescriptionItems.length > 0) {
-      showAlert('Prescription required for some items. Please upload prescription at checkout.', 'warning');
-    }
-
-    navigate('/cart');
+  const loadCartFromStorage = () => {
+    const savedCart = JSON.parse(localStorage.getItem('cart') || '[]');
+    setCart(savedCart.filter(item => item.type === 'medicine'));
   };
 
   const formatPrice = (price) => {
@@ -249,70 +226,38 @@ const Pharmacy = () => {
     fetchCategories();
     fetchBrands();
     loadCartFromStorage();
-  }, [fetchMedicines]);
+  }, []);
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Box>
-          <Typography variant="h3" component="h1" gutterBottom color="primary">
-            <LocalPharmacy sx={{ fontSize: 40, mr: 2, verticalAlign: 'bottom' }} />
-            Pharmacy
-          </Typography>
-          <Typography variant="body1" color="textSecondary">
-            Order genuine medicines with doorstep delivery
-          </Typography>
-        </Box>
-        <Button
-          variant="contained"
-          startIcon={<ShoppingCart />}
-          onClick={() => setCartOpen(true)}
-          sx={{ position: 'relative' }}
-        >
-          Cart
-          {cart.length > 0 && (
-            <Box
-              sx={{
-                position: 'absolute',
-                top: -8,
-                right: -8,
-                backgroundColor: 'error.main',
-                color: 'white',
-                borderRadius: '50%',
-                width: 20,
-                height: 20,
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              {cart.length}
-            </Box>
-          )}
-        </Button>
+      <Box sx={{ textAlign: 'center', mb: 4 }}>
+        <Typography variant="h3" component="h1" gutterBottom color="primary">
+          <LocalPharmacy sx={{ fontSize: 40, mr: 2, verticalAlign: 'bottom' }} />
+          Pharmacy
+        </Typography>
+        <Typography variant="body1" color="textSecondary">
+          Order genuine medicines with doorstep delivery
+        </Typography>
       </Box>
 
       {/* Search and Filters */}
       <Card sx={{ mb: 4, p: 3, backgroundColor: '#f8f9fa' }}>
-        <Grid container spacing={3}>
-          {/* Search */}
-          <Grid item xs={12} md={3}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={4}>
             <TextField
               fullWidth
               label="Search medicines"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="e.g., Paracetamol, Dolo 650"
+              placeholder="Search by medicine name, brand or category..."
               InputProps={{
                 startAdornment: <Search sx={{ mr: 1, color: 'primary.main' }} />,
               }}
             />
           </Grid>
 
-          {/* Category */}
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
               <InputLabel>Category</InputLabel>
@@ -329,7 +274,6 @@ const Pharmacy = () => {
             </FormControl>
           </Grid>
 
-          {/* Brand */}
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
               <InputLabel>Brand</InputLabel>
@@ -346,69 +290,60 @@ const Pharmacy = () => {
             </FormControl>
           </Grid>
 
-          {/* Prescription Required */}
           <Grid item xs={12} md={2}>
-            <FormControl fullWidth>
-              <InputLabel>Prescription</InputLabel>
-              <Select
-                value={prescriptionRequired}
-                label="Prescription"
-                onChange={(e) => setPrescriptionRequired(e.target.value)}
-              >
-                <MenuItem value="">All Types</MenuItem>
-                <MenuItem value="true">Prescription Required</MenuItem>
-                <MenuItem value="false">Over the Counter</MenuItem>
-              </Select>
-            </FormControl>
+            <Button
+              variant="contained"
+              onClick={handleSearch}
+              disabled={loading}
+              fullWidth
+            >
+              {loading ? 'Searching...' : 'Search'}
+            </Button>
           </Grid>
 
-          {/* Action Buttons */}
-          <Grid item xs={12} md={3}>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                variant="contained"
-                onClick={handleSearch}
-                disabled={loading}
-                startIcon={loading ? <CircularProgress size={20} /> : <FilterList />}
-                sx={{ flex: 1 }}
-              >
-                {loading ? 'Searching...' : 'Search'}
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={clearFilters}
-                sx={{ flex: 1 }}
-              >
-                Clear
-              </Button>
-            </Box>
+          <Grid item xs={12} md={2}>
+            <Button
+              variant="outlined"
+              onClick={clearFilters}
+              fullWidth
+            >
+              Clear Filters
+            </Button>
           </Grid>
         </Grid>
 
-        {/* Price Range */}
-        <Box sx={{ mt: 3 }}>
-          <Typography gutterBottom>Price Range: {formatPrice(priceRange[0])} - {formatPrice(priceRange[1])}</Typography>
-          <Slider
-            value={priceRange}
-            onChange={(e, newValue) => setPriceRange(newValue)}
-            valueLabelDisplay="auto"
-            valueLabelFormat={(value) => formatPrice(value)}
-            min={0}
-            max={5000}
-            step={100}
-          />
+        {/* Cart Button */}
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="contained"
+            startIcon={<ShoppingCart />}
+            onClick={() => navigate('/cart')}
+            sx={{ position: 'relative' }}
+          >
+            View Cart
+            {cart.length > 0 && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: -8,
+                  right: -8,
+                  backgroundColor: 'error.main',
+                  color: 'white',
+                  borderRadius: '50%',
+                  width: 20,
+                  height: 20,
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                {cart.length}
+              </Box>
+            )}
+          </Button>
         </Box>
       </Card>
-
-      {/* Search Results Info */}
-      {searchTerm && (
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="h6">
-            Search Results for: "{searchTerm}"
-            {filteredMedicines.length > 0 && ` (${filteredMedicines.length} medicines found)`}
-          </Typography>
-        </Box>
-      )}
 
       {/* Medicines Grid */}
       {loading ? (
@@ -419,34 +354,20 @@ const Pharmacy = () => {
           </Typography>
         </Box>
       ) : (
-        <>
-          <Grid container spacing={3}>
-            {filteredMedicines.map((medicine) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={medicine._id}>
-                <MedicineCard 
-                  medicine={medicine} 
-                  onAddToCart={addToCart}
-                  formatPrice={formatPrice}
-                />
-              </Grid>
-            ))}
-          </Grid>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-              <Pagination
-                count={totalPages}
-                page={page}
-                onChange={(e, value) => fetchMedicines(value)}
-                color="primary"
+        <Grid container spacing={3}>
+          {medicines.map((medicine) => (
+            <Grid item xs={12} sm={6} md={4} lg={3} key={medicine._id}>
+              <MedicineCard 
+                medicine={medicine} 
+                onAddToCart={addToCart}
+                formatPrice={formatPrice}
               />
-            </Box>
-          )}
-        </>
+            </Grid>
+          ))}
+        </Grid>
       )}
 
-      {filteredMedicines.length === 0 && !loading && (
+      {medicines.length === 0 && !loading && (
         <Box textAlign="center" sx={{ mt: 4, p: 6 }}>
           <Typography variant="h5" color="textSecondary" gutterBottom>
             {searchTerm ? 'No medicines found' : 'No medicines available'}
@@ -463,81 +384,11 @@ const Pharmacy = () => {
         </Box>
       )}
 
-      {/* Cart Dialog */}
-      <Dialog open={cartOpen} onClose={() => setCartOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <ShoppingCart sx={{ mr: 1 }} />
-            Shopping Cart ({cart.length} items)
-          </Box>
-        </DialogTitle>
-        <DialogContent>
-          {cart.length === 0 ? (
-            <Typography color="textSecondary" textAlign="center" py={4}>
-              Your cart is empty
-            </Typography>
-          ) : (
-            <Box>
-              {cart.map((item) => (
-                <Box key={item.medicineId} sx={{ display: 'flex', alignItems: 'center', py: 2, borderBottom: 1, borderColor: 'divider' }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="h6">{item.name}</Typography>
-                    <Typography variant="body2" color="textSecondary">{item.brand}</Typography>
-                    <Typography variant="body1" fontWeight="bold" color="primary">
-                      {formatPrice(item.price)}
-                    </Typography>
-                    {item.prescriptionRequired && (
-                      <Chip label="Prescription Required" color="warning" size="small" sx={{ mt: 1 }} />
-                    )}
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Button
-                      size="small"
-                      onClick={() => updateCartQuantity(item.medicineId, item.quantity - 1)}
-                    >
-                      <Remove />
-                    </Button>
-                    <Typography sx={{ mx: 1 }}>{item.quantity}</Typography>
-                    <Button
-                      size="small"
-                      onClick={() => updateCartQuantity(item.medicineId, item.quantity + 1)}
-                    >
-                      <Add />
-                    </Button>
-                    <Button
-                      color="error"
-                      onClick={() => removeFromCart(item.medicineId)}
-                      sx={{ ml: 2 }}
-                    >
-                      Remove
-                    </Button>
-                  </Box>
-                </Box>
-              ))}
-              <Box sx={{ mt: 3, pt: 2, borderTop: 2, borderColor: 'divider' }}>
-                <Typography variant="h5" textAlign="right">
-                  Total: {formatPrice(getCartTotal())}
-                </Typography>
-              </Box>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCartOpen(false)}>Continue Shopping</Button>
-          {cart.length > 0 && (
-            <Button variant="contained" onClick={proceedToCheckout}>
-              Proceed to Checkout
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
-
       {/* Alert Snackbar */}
       <Snackbar
         open={alert.open}
         autoHideDuration={4000}
         onClose={() => setAlert({ ...alert, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert onClose={() => setAlert({ ...alert, open: false })} severity={alert.severity}>
           {alert.message}
@@ -557,14 +408,26 @@ const MedicineCard = ({ medicine, onAddToCart, formatPrice }) => {
     setAdding(false);
   };
 
+  const displayPrice = medicine.discountedPrice || medicine.price;
+  const hasDiscount = medicine.discount > 0;
+
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.3s ease', '&:hover': { transform: 'translateY(-4px)', boxShadow: 3 } }}>
+    <Card sx={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      transition: 'all 0.3s ease', 
+      '&:hover': { 
+        transform: 'translateY(-4px)', 
+        boxShadow: 3 
+      } 
+    }}>
       <CardContent sx={{ flexGrow: 1, p: 2 }}>
         {/* Medicine Image Placeholder */}
         <Box
           sx={{
             height: 120,
-            backgroundColor: '#f5f5f5',
+            backgroundColor: '#e3f2fd',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -572,11 +435,16 @@ const MedicineCard = ({ medicine, onAddToCart, formatPrice }) => {
             borderRadius: 1
           }}
         >
-          <LocalPharmacy sx={{ fontSize: 40, color: 'text.secondary' }} />
+          <LocalPharmacy sx={{ fontSize: 40, color: 'primary.main' }} />
         </Box>
 
         {/* Medicine Details */}
-        <Typography variant="h6" gutterBottom sx={{ fontSize: '1rem', fontWeight: 600, minHeight: '48px' }}>
+        <Typography variant="h6" gutterBottom sx={{ 
+          fontSize: '1rem', 
+          fontWeight: 600, 
+          minHeight: '48px',
+          lineHeight: 1.2
+        }}>
           {medicine.name}
         </Typography>
         
@@ -584,16 +452,20 @@ const MedicineCard = ({ medicine, onAddToCart, formatPrice }) => {
           {medicine.brand}
         </Typography>
 
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 1, minHeight: '40px' }}>
+        <Typography variant="body2" color="textSecondary" sx={{ 
+          mb: 1, 
+          minHeight: '40px',
+          fontSize: '0.8rem'
+        }}>
           {medicine.composition?.join(', ') || 'No composition details'}
         </Typography>
 
         {/* Price */}
         <Box sx={{ mb: 2 }}>
-          {medicine.discount > 0 ? (
+          {hasDiscount ? (
             <Box>
               <Typography variant="h6" color="primary" fontWeight="bold">
-                {formatPrice(medicine.discountedPrice || medicine.price)}
+                {formatPrice(displayPrice)}
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography variant="body2" color="textSecondary" sx={{ textDecoration: 'line-through' }}>
@@ -604,7 +476,7 @@ const MedicineCard = ({ medicine, onAddToCart, formatPrice }) => {
             </Box>
           ) : (
             <Typography variant="h6" color="primary" fontWeight="bold">
-              {formatPrice(medicine.price)}
+              {formatPrice(displayPrice)}
             </Typography>
           )}
         </Box>
@@ -634,7 +506,7 @@ const MedicineCard = ({ medicine, onAddToCart, formatPrice }) => {
           variant="contained"
           onClick={handleAddToCart}
           disabled={!medicine.inStock || adding}
-          startIcon={adding ? <CircularProgress size={16} /> : <ShoppingCart />}
+          startIcon={<ShoppingCart />}
         >
           {medicine.inStock ? (adding ? 'Adding...' : 'Add to Cart') : 'Out of Stock'}
         </Button>

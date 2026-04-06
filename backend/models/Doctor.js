@@ -3,41 +3,61 @@ const mongoose = require('mongoose');
 const doctorSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Please add doctor name'],
+    required: [true, 'Doctor name is required'],
     trim: true
   },
-  specialty: {
+  email: {
     type: String,
-    required: [true, 'Please add specialty'],
+    required: [true, 'Email is required'],
+    unique: true,
+    trim: true,
+    lowercase: true
+  },
+  password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: 6
+  },
+  specialization: {
+    type: String,
+    required: [true, 'Specialization is required'],
     trim: true
   },
   qualification: {
     type: String,
-    required: [true, 'Please add qualification']
+    required: [true, 'Qualification is required'],
+    trim: true
   },
   experience: {
     type: Number,
-    required: [true, 'Please add experience in years'],
-    min: 0
+    required: [true, 'Experience is required'],
+    min: [0, 'Experience cannot be negative']
+  },
+  fee: {
+    type: Number,
+    required: [true, 'Consultation fee is required'],
+    min: [0, 'Fee cannot be negative']
   },
   location: {
     type: String,
-    required: [true, 'Please add location']
+    required: [true, 'Location is required'],
+    trim: true
   },
-  consultationFee: {
-    type: Number,
-    required: [true, 'Please add consultation fee'],
-    min: 0
+  address: {
+    type: String,
+    trim: true
+  },
+  phone: {
+    type: String,
+    trim: true
+  },
+  about: {
+    type: String,
+    trim: true
   },
   availability: [{
-    day: {
-      type: String,
-      required: true
-    },
-    slots: [{
-      type: String,
-      required: true
-    }]
+    day: String,
+    slots: [String]
   }],
   rating: {
     type: Number,
@@ -49,12 +69,26 @@ const doctorSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  image: {
+    type: String,
+    trim: true
+  },
   isActive: {
     type: Boolean,
     default: true
+  },
+  isVerified: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
 });
+
+// Index for better search performance
+doctorSchema.index({ name: 'text', specialization: 'text', qualification: 'text' });
+doctorSchema.index({ specialization: 1 });
+doctorSchema.index({ location: 1 });
+doctorSchema.index({ isActive: 1 });
 
 module.exports = mongoose.model('Doctor', doctorSchema);

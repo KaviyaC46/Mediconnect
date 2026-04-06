@@ -41,7 +41,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['patient', 'doctor', 'admin'],
+    enum: ['patient', 'doctor', 'admin', 'superadmin'],
     default: 'patient'
   },
   address: {
@@ -92,6 +92,17 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
 userSchema.methods.updateLastLogin = function() {
   this.lastLogin = new Date();
   return this.save();
+};
+
+// Generate auth token method (if using JWT)
+userSchema.methods.generateAuthToken = function() {
+  // This would typically use jwt.sign()
+  // For now, we'll return a simple token structure
+  return {
+    userId: this._id,
+    role: this.role,
+    email: this.email
+  };
 };
 
 module.exports = mongoose.model('User', userSchema);

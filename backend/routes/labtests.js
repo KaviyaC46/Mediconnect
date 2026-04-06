@@ -2,31 +2,39 @@ const express = require('express');
 const LabTest = require('../models/LabTest');
 const router = express.Router();
 
-// @desc    Get all lab tests with filtering and search
-// @route   GET /api/labtests
+// @desc    Get all lab tests
+// @route   GET /api/lab-tests
 // @access  Public
 router.get('/', async (req, res) => {
   try {
+    console.log('🔬 Lab tests API called with query:', req.query);
+    
     const { 
-      category, 
       search, 
-      department,
-      popular,
-      fastingRequired,
-      minPrice,
-      maxPrice,
-      page = 1,
-      limit = 12
+      category, 
+      minPrice, 
+      maxPrice, 
+      page = 1, 
+      limit = 12 
     } = req.query;
 
+    // Build filter object
     let filter = { isActive: true };
 
-    // Build filter object
-    if (category) filter.category = category;
-    if (department) filter.department = department;
-    if (popular === 'true') filter.popular = true;
-    if (fastingRequired) filter.fastingRequired = fastingRequired === 'true';
-    
+    // Search filter
+    if (search && search.trim() !== '') {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Category filter
+    if (category && category !== '' && category !== 'all') {
+      filter.category = { $regex: category, $options: 'i' };
+    }
+
     // Price range filter
     if (minPrice || maxPrice) {
       filter.price = {};
@@ -34,33 +42,29 @@ router.get('/', async (req, res) => {
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
 
-    // Search across multiple fields
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { category: { $regex: search, $options: 'i' } },
-        { tags: { $in: [new RegExp(search, 'i')] } },
-        { description: { $regex: search, $options: 'i' } }
-      ];
-    }
-
     // Pagination
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
-    // Get tests with filtering and pagination
-    const tests = await LabTest.find(filter)
-      .sort({ popular: -1, name: 1 })
+    console.log('🔍 Lab test filter:', filter);
+
+    // Get lab tests
+    const labTests = await LabTest.find(filter)
+      .sort({ name: 1 })
       .skip(skip)
-      .limit(limitNum);
+      .limit(limitNum)
+      .lean();
 
     // Get total count for pagination
     const total = await LabTest.countDocuments(filter);
 
+    console.log(`✅ Found ${labTests.length} lab tests`);
+
     res.json({
       success: true,
-      data: tests,
+      count: labTests.length,
+      data: labTests,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -70,47 +74,99 @@ router.get('/', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get lab tests error:', error);
+    console.error('❌ Get lab tests error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching lab tests'
+      message: 'Error fetching lab tests: ' + error.message
     });
   }
 });
 
-// @desc    Get popular lab tests
-// @route   GET /api/labtests/popular
+// @desc    Get lab test categories
+// @route   GET /api/lab-tests/categories
 // @access  Public
-router.get('/popular', async (req, res) => {
+router.get('/categories', async (req, res) => {
   try {
-    const popularTests = await LabTest.find({ 
-      popular: true,
-      isActive: true 
-    })
-    .sort({ popularityScore: -1 })
-    .limit(10);
-
+    console.log('📋 Fetching lab test categories');
+    const categories = await LabTest.distinct('category', { isActive: true });
+    console.log('✅ Categories found:', categories);
+    
     res.json({
       success: true,
-      data: popularTests
+      data: categories.filter(cat => cat).sort()
     });
-
   } catch (error) {
-    console.error('Get popular tests error:', error);
+    console.error('❌ Get lab test categories error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching popular tests'
+      message: 'Error fetching lab test categories: ' + error.message
     });
   }
 });
 
-// @desc    Get lab test by ID
-// @route   GET /api/labtests/:id
+// @desc    Get single lab test by ID
+// @route   GET /api/lab-tests/:id
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    const test = await LabTest.findById(req.params.id);
+    console.log('🔍 Fetching lab test by ID:', req.params.id);
+    
+    const labTest = await LabTest.findOne({ 
+      _id: req.params.id, 
+      isActive: true 
+    });
 
+    if (!labTest) {
+      console.log('❌ Lab test not found');
+      return res.status(404).json({
+        success: false,
+        message: 'Lab test not found'
+      });
+    }
+
+    console.log('✅ Lab test found:', labTest.name);
+    
+    res.json({
+      success: true,
+      data: labTest
+    });
+  } catch (error) {
+    console.error('❌ Get lab test by ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching lab test: ' + error.message
+    });
+  }
+});
+
+// @desc    Book lab test
+// @route   POST /api/lab-tests/book
+// @access  Private
+router.post('/book', async (req, res) => {
+  try {
+    console.log('📝 Lab test booking request:', req.body);
+    
+    const { 
+      testId, 
+      patientName, 
+      patientAge, 
+      patientGender, 
+      patientPhone, 
+      preferredDate, 
+      preferredTime, 
+      address 
+    } = req.body;
+
+    // Validate required fields
+    if (!testId || !patientName || !patientPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields'
+      });
+    }
+
+    // Get test details
+    const test = await LabTest.findById(testId);
     if (!test) {
       return res.status(404).json({
         success: false,
@@ -118,112 +174,143 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    // Increment popularity score when viewed
-    await test.incrementPopularity();
+    // Create lab order
+    const labOrder = {
+      testId: test._id,
+      testName: test.name,
+      price: test.price,
+      patientName,
+      patientAge,
+      patientGender,
+      patientPhone,
+      preferredDate: preferredDate || new Date().toISOString().split('T')[0],
+      preferredTime: preferredTime || '10:00 AM',
+      address: address || 'Home collection',
+      status: 'pending',
+      createdAt: new Date()
+    };
+
+    console.log('✅ Lab test booked successfully:', labOrder);
 
     res.json({
       success: true,
-      data: test
+      message: 'Lab test booked successfully',
+      data: labOrder
     });
 
   } catch (error) {
-    console.error('Get lab test error:', error);
+    console.error('❌ Book lab test error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error booking lab test: ' + error.message
+    });
+  }
+});
+
+// @desc    Create sample lab tests
+// @route   POST /api/lab-tests/sample
+// @access  Public (Remove in production)
+router.post('/sample', async (req, res) => {
+  try {
+    console.log('🎯 Creating sample lab tests...');
     
-    if (error.name === 'CastError') {
-      return res.status(404).json({
-        success: false,
-        message: 'Lab test not found'
-      });
-    }
+    const sampleTests = [
+      {
+        name: 'Complete Blood Count (CBC)',
+        category: 'Hematology',
+        price: 299,
+        description: 'Measures different components of blood including red blood cells, white blood cells, and platelets.',
+        fastingRequired: false,
+        reportTime: '24 hours',
+        sampleType: 'Blood',
+        parameters: ['Hemoglobin', 'WBC Count', 'RBC Count', 'Platelet Count', 'MCV', 'MCH'],
+        preparation: 'No special preparation required',
+        isActive: true,
+        isPopular: true
+      },
+      {
+        name: 'Blood Glucose Test',
+        category: 'Diabetes',
+        price: 199,
+        description: 'Measures blood sugar levels to diagnose and monitor diabetes.',
+        fastingRequired: true,
+        reportTime: '6 hours',
+        sampleType: 'Blood',
+        parameters: ['Fasting Blood Sugar', 'Postprandial Blood Sugar'],
+        preparation: 'Fasting for 8-12 hours required',
+        isActive: true,
+        isPopular: true
+      },
+      {
+        name: 'Thyroid Profile',
+        category: 'Endocrinology',
+        price: 599,
+        description: 'Comprehensive test to measure thyroid hormone levels and function.',
+        fastingRequired: false,
+        reportTime: '48 hours',
+        sampleType: 'Blood',
+        parameters: ['TSH', 'T3', 'T4', 'Free T3', 'Free T4'],
+        preparation: 'No special preparation required',
+        isActive: true,
+        isPopular: true
+      },
+      {
+        name: 'Liver Function Test',
+        category: 'Hepatology',
+        price: 499,
+        description: 'Assesses liver health by measuring enzymes, proteins, and substances.',
+        fastingRequired: true,
+        reportTime: '24 hours',
+        sampleType: 'Blood',
+        parameters: ['ALT', 'AST', 'ALP', 'Bilirubin', 'Albumin'],
+        preparation: 'Fasting for 10-12 hours required',
+        isActive: true
+      },
+      {
+        name: 'Kidney Function Test',
+        category: 'Nephrology',
+        price: 399,
+        description: 'Evaluates kidney function and detects kidney diseases.',
+        fastingRequired: false,
+        reportTime: '24 hours',
+        sampleType: 'Blood',
+        parameters: ['Creatinine', 'Urea', 'Uric Acid', 'eGFR'],
+        preparation: 'No special preparation required',
+        isActive: true
+      },
+      {
+        name: 'Lipid Profile',
+        category: 'Cardiology',
+        price: 349,
+        description: 'Measures cholesterol and triglyceride levels to assess heart health.',
+        fastingRequired: true,
+        reportTime: '24 hours',
+        sampleType: 'Blood',
+        parameters: ['Total Cholesterol', 'HDL', 'LDL', 'Triglycerides'],
+        preparation: 'Fasting for 12-14 hours required',
+        isActive: true
+      }
+    ];
 
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching lab test details'
-    });
-  }
-});
-
-// @desc    Get lab test categories
-// @route   GET /api/labtests/data/categories
-// @access  Public
-router.get('/data/categories', async (req, res) => {
-  try {
-    const categories = await LabTest.distinct('category');
+    // Clear existing tests
+    await LabTest.deleteMany({});
     
-    res.json({
-      success: true,
-      data: categories.sort()
-    });
+    // Insert sample tests
+    const createdTests = await LabTest.insertMany(sampleTests);
 
-  } catch (error) {
-    console.error('Get categories error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching categories'
-    });
-  }
-});
-
-// @desc    Search tests by health condition or symptom
-// @route   GET /api/labtests/search/condition
-// @access  Public
-router.get('/search/condition', async (req, res) => {
-  try {
-    const { condition } = req.query;
-
-    if (!condition) {
-      return res.status(400).json({
-        success: false,
-        message: 'Condition parameter is required'
-      });
-    }
-
-    // This is a simplified version - in real app, you'd have a condition-test mapping
-    const tests = await LabTest.find({
-      isActive: true,
-      $or: [
-        { name: { $regex: condition, $options: 'i' } },
-        { tags: { $in: [new RegExp(condition, 'i')] } },
-        { description: { $regex: condition, $options: 'i' } }
-      ]
-    })
-    .limit(10);
+    console.log(`✅ Created ${createdTests.length} sample lab tests`);
 
     res.json({
       success: true,
-      data: tests
+      message: `Created ${createdTests.length} sample lab tests`,
+      data: createdTests
     });
 
   } catch (error) {
-    console.error('Search by condition error:', error);
+    console.error('❌ Create sample tests error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error searching tests by condition'
-    });
-  }
-});
-
-// @desc    Get health packages (tests with multiple included tests)
-// @route   GET /api/labtests/health-packages
-// @access  Public
-router.get('/data/health-packages', async (req, res) => {
-  try {
-    const healthPackages = await LabTest.find({
-      category: 'Health Package',
-      isActive: true
-    })
-    .sort({ price: 1 });
-
-    res.json({
-      success: true,
-      data: healthPackages
-    });
-
-  } catch (error) {
-    console.error('Get health packages error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching health packages'
+      message: 'Error creating sample tests: ' + error.message
     });
   }
 });

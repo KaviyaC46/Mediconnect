@@ -1,173 +1,95 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Grid,
+  Typography,
+  Box,
   Card,
   CardContent,
-  Typography,
+  Grid,
   Button,
-  Box,
   IconButton,
   TextField,
   Divider,
-  Alert,
+  Paper
 } from '@mui/material';
-import { Add, Remove, Delete } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
+import {
+  Add,
+  Remove,
+  Delete,
+  ShoppingCartCheckout
+} from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 
 const Cart = () => {
-  const [cartItems, setCartItems] = useState([]);
-  const { user } = useAuth();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [cart, setCart] = useState([]); // ADD THIS LINE
 
   useEffect(() => {
-    loadCartItems();
+    loadCart();
   }, []);
 
-  const loadCartItems = () => {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    setCartItems(cart);
+  const loadCart = () => {
+    const savedCart = JSON.parse(localStorage.getItem('cart') || '[]');
+    setCart(savedCart);
   };
 
   const updateQuantity = (index, newQuantity) => {
     if (newQuantity < 1) return;
     
-    const updatedCart = [...cartItems];
+    const updatedCart = [...cart];
     updatedCart[index].quantity = newQuantity;
-    setCartItems(updatedCart);
+    setCart(updatedCart);
     localStorage.setItem('cart', JSON.stringify(updatedCart));
   };
 
   const removeItem = (index) => {
-    const updatedCart = cartItems.filter((_, i) => i !== index);
-    setCartItems(updatedCart);
+    const updatedCart = cart.filter((_, i) => i !== index);
+    setCart(updatedCart);
     localStorage.setItem('cart', JSON.stringify(updatedCart));
   };
 
-  const calculateItemPrice = (item) => {
-    const price = item.discount > 0 
-      ? item.price - (item.price * item.discount / 100)
-      : item.price;
-    return price * item.quantity;
+  const getTotalPrice = () => {
+    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
   };
 
-  const calculateTotal = () => {
-    return cartItems.reduce((total, item) => total + calculateItemPrice(item), 0);
-  };
-
-  const proceedToCheckout = async () => {
+  const handleCheckout = () => {
     if (!user) {
-      alert('Please login to proceed with checkout');
+      alert('Please login to proceed to checkout');
       navigate('/login');
       return;
     }
-
-    if (cartItems.length === 0) {
+    
+    if (cart.length === 0) {
       alert('Your cart is empty');
       return;
     }
-
-    try {
-      // Separate medicines and lab tests
-      const medicines = cartItems.filter(item => item.type === 'medicine');
-      const labTests = cartItems.filter(item => item.type === 'labtest');
-
-      // Create medicine orders
-      if (medicines.length > 0) {
-        const orderData = {
-          items: medicines.map(item => ({
-            medicine: item._id,
-            quantity: item.quantity,
-            price: calculateItemPrice(item) / item.quantity
-          })),
-          totalAmount: medicines.reduce((total, item) => total + calculateItemPrice(item), 0),
-          shippingAddress: {
-            address: 'To be provided',
-            city: 'To be provided',
-            state: 'To be provided',
-            pincode: 'To be provided',
-            phone: user.phone
-          },
-          paymentMethod: 'online'
-        };
-
-        await axios.post('http://localhost:5000/api/orders', orderData);
-      }
-
-      // Create lab test orders
-      if (labTests.length > 0) {
-        const labOrderData = {
-          tests: labTests.map(item => ({
-            test: item._id,
-            price: calculateItemPrice(item) / item.quantity
-          })),
-          totalAmount: labTests.reduce((total, item) => total + calculateItemPrice(item), 0),
-          patientDetails: {
-            name: user.name,
-            age: user.age || 0,
-            gender: user.gender || 'Not specified',
-            phone: user.phone
-          },
-          address: {
-            address: 'To be provided',
-            city: 'To be provided',
-            state: 'To be provided',
-            pincode: 'To be provided'
-          },
-          preferredDate: new Date().toISOString().split('T')[0],
-          preferredTime: '10:00 AM',
-          paymentMethod: 'online'
-        };
-
-        await axios.post('http://localhost:5000/api/laborders', labOrderData);
-      }
-
-      // Clear cart
-      localStorage.removeItem('cart');
-      setCartItems([]);
-      
-      alert('Order placed successfully!');
-      navigate('/orders');
-    } catch (error) {
-      console.error('Error placing order:', error);
-      alert('Failed to place order. Please try again.');
-    }
+    
+    navigate('/checkout');
   };
 
-  if (!user) {
+  if (cart.length === 0) {
     return (
-      <Container sx={{ mt: 4, textAlign: 'center' }}>
-        <Alert severity="warning">
-          Please login to view your cart.
-        </Alert>
-        <Button 
-          variant="contained" 
-          sx={{ mt: 2 }}
-          onClick={() => navigate('/login')}
-        >
-          Login
-        </Button>
-      </Container>
-    );
-  }
-
-  if (cartItems.length === 0) {
-    return (
-      <Container sx={{ mt: 4, textAlign: 'center' }}>
-        <Typography variant="h5" gutterBottom>
+      <Container maxWidth="lg" sx={{ mt: 4, textAlign: 'center' }}>
+        <Typography variant="h4" gutterBottom>
           Your Cart is Empty
         </Typography>
-        <Typography variant="body1" color="textSecondary" gutterBottom>
-          Add some items from doctors, pharmacy, or lab tests.
+        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+          Add some items to your cart to see them here
         </Typography>
         <Button 
           variant="contained" 
-          sx={{ mt: 2 }}
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/pharmacy')}
         >
-          Continue Shopping
+          Shop Medicines
+        </Button>
+        <Button 
+          variant="outlined" 
+          onClick={() => navigate('/lab-tests')}
+          sx={{ ml: 2 }}
+        >
+          Book Lab Tests
         </Button>
       </Container>
     );
@@ -175,37 +97,28 @@ const Cart = () => {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
+      <Typography variant="h4" gutterBottom>
         Shopping Cart
       </Typography>
 
-      <Grid container spacing={4}>
+      <Grid container spacing={3}>
         {/* Cart Items */}
         <Grid item xs={12} md={8}>
-          {cartItems.map((item, index) => (
+          {cart.map((item, index) => (
             <Card key={index} sx={{ mb: 2 }}>
               <CardContent>
                 <Grid container alignItems="center" spacing={2}>
                   <Grid item xs={12} sm={6}>
-                    <Typography variant="h6">
-                      {item.name}
-                    </Typography>
+                    <Typography variant="h6">{item.name}</Typography>
                     <Typography color="textSecondary">
-                      {item.type === 'medicine' ? item.brand : item.category}
+                      {item.type === 'labtest' ? 'Lab Test' : 'Medicine'}
                     </Typography>
-                    {item.type === 'medicine' && item.prescriptionRequired && (
-                      <Typography variant="body2" color="error">
-                        Prescription Required
-                      </Typography>
-                    )}
-                    {item.type === 'labtest' && item.fastingRequired && (
-                      <Typography variant="body2" color="warning.main">
-                        Fasting Required
-                      </Typography>
-                    )}
+                    <Typography variant="h6" color="primary">
+                      ₹{item.price}
+                    </Typography>
                   </Grid>
-
-                  <Grid item xs={12} sm={2}>
+                  
+                  <Grid item xs={12} sm={3}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <IconButton 
                         onClick={() => updateQuantity(index, item.quantity - 1)}
@@ -216,31 +129,31 @@ const Cart = () => {
                       <TextField
                         value={item.quantity}
                         size="small"
-                        sx={{ width: 60, mx: 1 }}
-                        inputProps={{ style: { textAlign: 'center' } }}
-                        disabled
+                        sx={{ 
+                          width: 60, 
+                          mx: 1,
+                          '& .MuiInputBase-input': { textAlign: 'center' }
+                        }}
+                        inputProps={{ min: 1 }}
+                        onChange={(e) => updateQuantity(index, parseInt(e.target.value) || 1)}
                       />
                       <IconButton onClick={() => updateQuantity(index, item.quantity + 1)}>
                         <Add />
                       </IconButton>
                     </Box>
                   </Grid>
-
-                  <Grid item xs={12} sm={3}>
-                    <Typography variant="h6" textAlign="center">
-                      ₹{calculateItemPrice(item).toFixed(2)}
+                  
+                  <Grid item xs={12} sm={2}>
+                    <Typography variant="h6" align="center">
+                      ₹{item.price * item.quantity}
                     </Typography>
-                    {item.discount > 0 && (
-                      <Typography variant="body2" color="textSecondary" textAlign="center" sx={{ textDecoration: 'line-through' }}>
-                        ₹{(item.price * item.quantity).toFixed(2)}
-                      </Typography>
-                    )}
                   </Grid>
-
+                  
                   <Grid item xs={12} sm={1}>
                     <IconButton 
                       color="error" 
                       onClick={() => removeItem(index)}
+                      sx={{ display: 'block', margin: '0 auto' }}
                     >
                       <Delete />
                     </IconButton>
@@ -253,54 +166,54 @@ const Cart = () => {
 
         {/* Order Summary */}
         <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Order Summary
-              </Typography>
-              
-              <Box sx={{ mb: 2 }}>
-                {cartItems.map((item, index) => (
-                  <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2">
-                      {item.name} x {item.quantity}
-                    </Typography>
-                    <Typography variant="body2">
-                      ₹{calculateItemPrice(item).toFixed(2)}
-                    </Typography>
-                  </Box>
-                ))}
+          <Paper elevation={2} sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Order Summary
+            </Typography>
+            
+            <Box sx={{ mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography>Subtotal:</Typography>
+                <Typography>₹{getTotalPrice()}</Typography>
               </Box>
-
-              <Divider sx={{ my: 2 }} />
-
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography>Shipping:</Typography>
+                <Typography>₹0</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography>Tax:</Typography>
+                <Typography>₹0</Typography>
+              </Box>
+              <Divider sx={{ my: 1 }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="h6">Total</Typography>
+                <Typography variant="h6">Total:</Typography>
                 <Typography variant="h6" color="primary">
-                  ₹{calculateTotal().toFixed(2)}
+                  ₹{getTotalPrice()}
                 </Typography>
               </Box>
+            </Box>
 
-              <Button
-                fullWidth
-                variant="contained"
-                size="large"
-                sx={{ mt: 3 }}
-                onClick={proceedToCheckout}
-              >
-                Proceed to Checkout
-              </Button>
+            <Button 
+              variant="contained" 
+              color="primary" 
+              size="large"
+              fullWidth
+              startIcon={<ShoppingCartCheckout />}
+              onClick={handleCheckout}
+              sx={{ mt: 2 }}
+            >
+              Proceed to Checkout
+            </Button>
 
-              <Button
-                fullWidth
-                variant="outlined"
-                sx={{ mt: 1 }}
-                onClick={() => navigate('/')}
-              >
-                Continue Shopping
-              </Button>
-            </CardContent>
-          </Card>
+            <Button 
+              variant="outlined" 
+              fullWidth
+              onClick={() => navigate('/pharmacy')}
+              sx={{ mt: 1 }}
+            >
+              Continue Shopping
+            </Button>
+          </Paper>
         </Grid>
       </Grid>
     </Container>

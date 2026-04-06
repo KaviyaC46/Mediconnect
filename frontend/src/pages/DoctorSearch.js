@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Grid,
@@ -19,10 +19,11 @@ import {
 } from '@mui/material';
 import {
   Search,
-  FilterList,
-  LocationOn,
   MedicalServices,
-  Work
+  LocationOn,
+  Work,
+  Phone,
+  Email
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -30,132 +31,167 @@ import axios from 'axios';
 const DoctorSearch = () => {
   const navigate = useNavigate();
   const [doctors, setDoctors] = useState([]);
-  const [filteredDoctors, setFilteredDoctors] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [specialties, setSpecialties] = useState([]);
+  const [specializations, setSpecializations] = useState([]);
   const [locations, setLocations] = useState([]);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
-  const [specialty, setSpecialty] = useState('');
+  const [specialization, setSpecialization] = useState('');
   const [location, setLocation] = useState('');
   const [experience, setExperience] = useState('');
-  const [rating, setRating] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Wrap fetchDoctors in useCallback to fix dependency warning
-  const fetchDoctors = useCallback(async (pageNum = 1) => {
+  // Fetch doctors
+  const fetchDoctors = async (pageNum = 1) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
+      const params = {
         page: pageNum,
-        limit: 12
+        limit: 12,
+        search: searchTerm,
+        specialization: specialization,
+        location: location,
+        experience: experience
+      };
+
+      // Remove empty params
+      Object.keys(params).forEach(key => {
+        if (params[key] === '' || params[key] === null || params[key] === undefined) {
+          delete params[key];
+        }
       });
 
-      if (searchTerm) params.append('search', searchTerm);
-      if (specialty) params.append('specialty', specialty);
-      if (location) params.append('location', location);
-
-      const response = await axios.get(`http://localhost:5000/api/doctors?${params}`);
+      const response = await axios.get('http://localhost:5000/api/doctors', { params });
       
       if (response.data.success) {
         setDoctors(response.data.data);
-        setFilteredDoctors(response.data.data);
         setTotalPages(response.data.pagination.pages);
         setPage(pageNum);
+      } else {
+        console.error('Failed to fetch doctors:', response.data.message);
+        // Use mock data if API fails
+        setDoctors(getMockDoctors());
       }
     } catch (error) {
       console.error('Error fetching doctors:', error);
+      // Use mock data if API fails
+      setDoctors(getMockDoctors());
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, specialty, location]);
+  };
 
-  const fetchSpecialties = async () => {
+  // Mock data for testing
+  const getMockDoctors = () => [
+    {
+      _id: '1',
+      name: 'Dr. Rajesh Kumar',
+      specialization: 'Cardiologist',
+      qualification: 'MD, DM Cardiology',
+      experience: 15,
+      fee: 800,
+      location: 'Delhi',
+      address: 'AIIMS Delhi, Ansari Nagar',
+      phone: '+91 9876543210',
+      email: 'dr.rajesh@example.com',
+      about: 'Senior Cardiologist with 15+ years of experience in interventional cardiology.',
+      rating: 4.5,
+      totalRatings: 120,
+      availability: [
+        { day: 'Monday', slots: ['09:00 AM', '10:00 AM', '11:00 AM'] },
+        { day: 'Wednesday', slots: ['02:00 PM', '03:00 PM', '04:00 PM'] }
+      ]
+    },
+    {
+      _id: '2',
+      name: 'Dr. Priya Sharma',
+      specialization: 'Dermatologist',
+      qualification: 'MD Dermatology',
+      experience: 8,
+      fee: 600,
+      location: 'Mumbai',
+      address: 'Fortis Hospital, Mulund',
+      phone: '+91 9876543211',
+      email: 'dr.priya@example.com',
+      about: 'Expert in skin treatments and cosmetic dermatology.',
+      rating: 4.8,
+      totalRatings: 85,
+      availability: [
+        { day: 'Tuesday', slots: ['10:00 AM', '11:00 AM', '12:00 PM'] },
+        { day: 'Friday', slots: ['03:00 PM', '04:00 PM', '05:00 PM'] }
+      ]
+    },
+    {
+      _id: '3',
+      name: 'Dr. Amit Patel',
+      specialization: 'Orthopedic',
+      qualification: 'MS Orthopedics',
+      experience: 12,
+      fee: 700,
+      location: 'Bangalore',
+      address: 'Manipal Hospital, Whitefield',
+      phone: '+91 9876543212',
+      email: 'dr.amit@example.com',
+      about: 'Specialized in joint replacement and sports injuries.',
+      rating: 4.6,
+      totalRatings: 95,
+      availability: [
+        { day: 'Monday', slots: ['09:00 AM', '10:00 AM'] },
+        { day: 'Thursday', slots: ['02:00 PM', '03:00 PM'] }
+      ]
+    }
+  ];
+
+  const fetchSpecializations = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/doctors/specialties');
+      const response = await axios.get('http://localhost:5000/api/doctors/data/specializations');
       if (response.data.success) {
-        setSpecialties(response.data.data);
+        setSpecializations(response.data.data);
       }
     } catch (error) {
-      console.error('Error fetching specialties:', error);
+      console.error('Error fetching specializations:', error);
+      setSpecializations(['Cardiologist', 'Dermatologist', 'Orthopedic', 'Pediatrician', 'Neurologist']);
     }
   };
 
   const fetchLocations = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/doctors/locations');
+      const response = await axios.get('http://localhost:5000/api/doctors/data/locations');
       if (response.data.success) {
         setLocations(response.data.data);
       }
     } catch (error) {
       console.error('Error fetching locations:', error);
+      setLocations(['Delhi', 'Mumbai', 'Bangalore', 'Chennai', 'Kolkata']);
     }
   };
 
-  // Filter doctors based on current criteria
-  const filterDoctors = useCallback(() => {
-    let filtered = [...doctors];
-
-    if (searchTerm) {
-      filtered = filtered.filter(doctor =>
-        doctor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doctor.specialty.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (specialty) {
-      filtered = filtered.filter(doctor => doctor.specialty === specialty);
-    }
-
-    if (location) {
-      filtered = filtered.filter(doctor => doctor.location === location);
-    }
-
-    if (experience) {
-      filtered = filtered.filter(doctor => doctor.experience >= parseInt(experience));
-    }
-
-    if (rating > 0) {
-      filtered = filtered.filter(doctor => doctor.rating >= rating);
-    }
-
-    setFilteredDoctors(filtered);
-    setPage(1);
-  }, [doctors, searchTerm, specialty, location, experience, rating]);
-
   const handleSearch = () => {
-    filterDoctors();
+    setPage(1);
+    fetchDoctors(1);
   };
 
   const clearFilters = () => {
     setSearchTerm('');
-    setSpecialty('');
+    setSpecialization('');
     setLocation('');
     setExperience('');
-    setRating(0);
     setPage(1);
-    setFilteredDoctors(doctors);
+    fetchDoctors(1);
   };
 
   const bookAppointment = (doctorId) => {
     navigate(`/book-appointment/${doctorId}`);
   };
 
-  // Initial data loading - fixed with useCallback dependencies
+  // Initial data loading
   useEffect(() => {
     fetchDoctors();
-    fetchSpecialties();
+    fetchSpecializations();
     fetchLocations();
-  }, [fetchDoctors]); // Now fetchDoctors is properly included
-
-  // Apply filters whenever search criteria or doctors data changes
-  useEffect(() => {
-    if (doctors.length > 0) {
-      filterDoctors();
-    }
-  }, [doctors, filterDoctors]);
+  }, []);
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
@@ -172,14 +208,14 @@ const DoctorSearch = () => {
 
       {/* Search and Filters */}
       <Card sx={{ mb: 4, p: 3, backgroundColor: '#f8f9fa' }}>
-        <Grid container spacing={3}>
-          {/* Search */}
+        <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={3}>
             <TextField
               fullWidth
-              label="Search doctors or specialties"
+              label="Search doctors or specializations"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="e.g., Cardiologist, Dr. Smith"
               InputProps={{
                 startAdornment: <Search sx={{ mr: 1, color: 'primary.main' }} />,
@@ -187,24 +223,22 @@ const DoctorSearch = () => {
             />
           </Grid>
 
-          {/* Specialty */}
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
-              <InputLabel>Specialty</InputLabel>
+              <InputLabel>Specialization</InputLabel>
               <Select
-                value={specialty}
-                label="Specialty"
-                onChange={(e) => setSpecialty(e.target.value)}
+                value={specialization}
+                label="Specialization"
+                onChange={(e) => setSpecialization(e.target.value)}
               >
-                <MenuItem value="">All Specialties</MenuItem>
-                {specialties.map((spec) => (
+                <MenuItem value="">All Specializations</MenuItem>
+                {specializations.map((spec) => (
                   <MenuItem key={spec} value={spec}>{spec}</MenuItem>
                 ))}
               </Select>
             </FormControl>
           </Grid>
 
-          {/* Location */}
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
               <InputLabel>Location</InputLabel>
@@ -221,7 +255,6 @@ const DoctorSearch = () => {
             </FormControl>
           </Grid>
 
-          {/* Experience */}
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
               <InputLabel>Experience</InputLabel>
@@ -239,17 +272,15 @@ const DoctorSearch = () => {
             </FormControl>
           </Grid>
 
-          {/* Action Buttons */}
           <Grid item xs={12} md={3}>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <Button
                 variant="contained"
                 onClick={handleSearch}
                 disabled={loading}
-                startIcon={loading ? <CircularProgress size={20} /> : <FilterList />}
                 sx={{ flex: 1 }}
               >
-                Search
+                {loading ? 'Searching...' : 'Search'}
               </Button>
               <Button
                 variant="outlined"
@@ -261,16 +292,6 @@ const DoctorSearch = () => {
             </Box>
           </Grid>
         </Grid>
-
-        {/* Rating Filter */}
-        <Box sx={{ mt: 3 }}>
-          <Typography gutterBottom>Minimum Rating: {rating > 0 ? `${rating}+ stars` : 'Any rating'}</Typography>
-          <Rating
-            value={rating}
-            onChange={(e, newValue) => setRating(newValue || 0)}
-            size="large"
-          />
-        </Box>
       </Card>
 
       {/* Doctors Grid */}
@@ -284,7 +305,7 @@ const DoctorSearch = () => {
       ) : (
         <>
           <Grid container spacing={3}>
-            {filteredDoctors.map((doctor) => (
+            {doctors.map((doctor) => (
               <Grid item xs={12} sm={6} md={4} key={doctor._id}>
                 <DoctorCard 
                   doctor={doctor} 
@@ -308,7 +329,7 @@ const DoctorSearch = () => {
         </>
       )}
 
-      {filteredDoctors.length === 0 && !loading && (
+      {doctors.length === 0 && !loading && (
         <Box textAlign="center" sx={{ mt: 4, p: 6 }}>
           <Typography variant="h5" color="textSecondary" gutterBottom>
             No doctors found
@@ -327,69 +348,104 @@ const DoctorSearch = () => {
 
 // Doctor Card Component
 const DoctorCard = ({ doctor, onBookAppointment }) => {
+  const formatPrice = (price) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
+    }).format(price);
+  };
+
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Card sx={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      transition: 'all 0.3s ease', 
+      '&:hover': { 
+        transform: 'translateY(-4px)', 
+        boxShadow: 3 
+      } 
+    }}>
       <CardContent sx={{ flexGrow: 1, p: 3 }}>
-        {/* Doctor Image Placeholder */}
-        <Box
-          sx={{
-            height: 120,
-            backgroundColor: '#e3f2fd',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            mb: 3,
-            borderRadius: 2
-          }}
-        >
-          <MedicalServices sx={{ fontSize: 60, color: 'primary.main' }} />
+        {/* Doctor Header */}
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+          <Box
+            sx={{
+              width: 60,
+              height: 60,
+              borderRadius: '50%',
+              backgroundColor: 'primary.main',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              fontSize: '1.2rem',
+              fontWeight: 'bold',
+              mr: 2
+            }}
+          >
+            {doctor.name.split(' ').map(n => n[0]).join('')}
+          </Box>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+              {doctor.name}
+            </Typography>
+            <Chip 
+              label={doctor.specialization} 
+              color="primary" 
+              size="small" 
+              sx={{ mb: 1 }}
+            />
+          </Box>
         </Box>
 
         {/* Doctor Details */}
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-          {doctor.name}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" color="textSecondary" gutterBottom>
+            {doctor.qualification}
+          </Typography>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+            <LocationOn sx={{ fontSize: 18, color: 'text.secondary', mr: 1 }} />
+            <Typography variant="body2" color="textSecondary">
+              {doctor.location}
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+            <Work sx={{ fontSize: 18, color: 'text.secondary', mr: 1 }} />
+            <Typography variant="body2" color="textSecondary">
+              {doctor.experience} years experience
+            </Typography>
+          </Box>
+
+          {doctor.phone && (
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+              <Phone sx={{ fontSize: 18, color: 'text.secondary', mr: 1 }} />
+              <Typography variant="body2" color="textSecondary">
+                {doctor.phone}
+              </Typography>
+            </Box>
+          )}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Rating value={doctor.rating} readOnly size="small" />
+            <Typography variant="body2" color="textSecondary" sx={{ ml: 1 }}>
+              ({doctor.totalRatings || 0} reviews)
+            </Typography>
+          </Box>
+
+          {doctor.about && (
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 2, fontStyle: 'italic' }}>
+              "{doctor.about}"
+            </Typography>
+          )}
+        </Box>
+
+        {/* Consultation Fee */}
+        <Typography variant="h6" color="primary" sx={{ mb: 2 }}>
+          Consultation Fee: {formatPrice(doctor.fee)}
         </Typography>
-        
-        <Chip 
-          label={doctor.specialty} 
-          color="primary" 
-          size="small" 
-          sx={{ mb: 2 }}
-        />
-
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-          <LocationOn sx={{ fontSize: 18, color: 'text.secondary', mr: 1 }} />
-          <Typography variant="body2" color="textSecondary">
-            {doctor.location}
-          </Typography>
-        </Box>
-
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-          <Work sx={{ fontSize: 18, color: 'text.secondary', mr: 1 }} />
-          <Typography variant="body2" color="textSecondary">
-            {doctor.experience} years experience
-          </Typography>
-        </Box>
-
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Rating value={doctor.rating} readOnly size="small" />
-          <Typography variant="body2" color="textSecondary" sx={{ ml: 1 }}>
-            ({doctor.totalRatings || 0} reviews)
-          </Typography>
-        </Box>
-
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-          {doctor.qualification}
-        </Typography>
-
-        {doctor.availability && (
-          <Chip 
-            label={doctor.availability} 
-            color={doctor.availability === 'Available Today' ? 'success' : 'default'}
-            size="small"
-            sx={{ mb: 2 }}
-          />
-        )}
       </CardContent>
 
       {/* Book Appointment Button */}
